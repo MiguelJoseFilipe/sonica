@@ -3,6 +3,7 @@ sonica_enb_phy_srcs = files([
   'phy.cc',
   'phy_common.cc',
   'sf_worker.cc',
+  'doppler_shift.cc',
   'txrx.cc'
 ])
 

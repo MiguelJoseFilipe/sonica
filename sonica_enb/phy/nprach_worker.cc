@@ -111,7 +111,6 @@ int nprach_worker::run_tti(sf_buffer* b)
   */
   uint32_t index;
 
-  printf("Detecting %d samples at TTI %d\n", b->nof_samples, b->tti);
   int ret = sonica_nprach_detect(&nprach, b->samples, b->nof_samples, NULL, &index, NULL);
   sonica_nprach_detect_reset(&nprach);
 

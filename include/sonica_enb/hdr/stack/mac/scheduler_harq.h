@@ -93,7 +93,7 @@ class ul_harq_proc : public harq_proc
 public:
   struct ul_alloc_t {
     uint32_t sc_num; // sub_carrier number of the RU: 36.213 Table 16.5.1.1-1
-    uint32_t len; // RU sub frame length
+    uint32_t i_ru; // RU sub frame length
 //    void     set(uint32_t start, uint32_t len)
 //    {
 //      RB_start = start;

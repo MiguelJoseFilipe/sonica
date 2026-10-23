@@ -20,8 +20,10 @@
  */
 
 #include <pthread.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
+#include <time.h>
 #include <uhd.h>
 #include <uhd/types/sensors.h>
 #include <unistd.h>
@@ -74,8 +76,28 @@ void suppress_handler(const char* x)
 
 static cf_t zero_mem[64 * 1024];
 
+// Print RF faults on the console, at most once per second per type, with a running count
+static void rf_uhd_console_event(const char* what, time_t* last, unsigned long* count)
+{
+  (*count)++;
+  time_t now = time(NULL);
+  if (now != *last) {
+    *last = now;
+    char ts[32];
+    struct tm tmv;
+    localtime_r(&now, &tmv);
+    strftime(ts, sizeof(ts), "%H:%M:%S", &tmv);
+    fprintf(stderr, "\n[%s][RF][ERROR] %s (x%lu) -- transmit/receive stalled; check host scheduling/underruns\n",
+            ts, what, *count);
+    fflush(stderr);
+  }
+}
+
 static void log_overflow(rf_uhd_handler_t* h)
 {
+  static time_t last = 0;
+  static unsigned long count = 0;
+  rf_uhd_console_event("RX OVERFLOW", &last, &count);
   if (h->uhd_error_handler) {
     srslte_rf_error_t error;
     bzero(&error, sizeof(srslte_rf_error_t));
@@ -86,6 +108,9 @@ static void log_overflow(rf_uhd_handler_t* h)
 
 static void log_late(rf_uhd_handler_t* h, bool is_rx)
 {
+  static time_t last = 0;
+  static unsigned long count = 0;
+  rf_uhd_console_event(is_rx ? "RX LATE" : "TX LATE", &last, &count);
   if (h->uhd_error_handler) {
     srslte_rf_error_t error;
     bzero(&error, sizeof(srslte_rf_error_t));
@@ -98,6 +123,9 @@ static void log_late(rf_uhd_handler_t* h, bool is_rx)
 #if HAVE_ASYNC_THREAD
 static void log_underflow(rf_uhd_handler_t* h)
 {
+  static time_t last = 0;
+  static unsigned long count = 0;
+  rf_uhd_console_event("TX UNDERFLOW", &last, &count);
   if (h->uhd_error_handler) {
     srslte_rf_error_t error;
     bzero(&error, sizeof(srslte_rf_error_t));
@@ -880,8 +908,12 @@ double rf_uhd_set_tx_srate(void* h, double freq)
   } else {
     uhd_usrp_set_tx_rate(handler->usrp, freq, 0);
   }
-  handler->tx_rate = freq;
-  return freq;
+  // Return the actual (coerced) TX rate rather than the requested one
+  double actual_tx_rate = freq;
+  uhd_usrp_get_tx_rate(handler->usrp, 0, &actual_tx_rate);
+  printf("RF UHD: TX srate requested %.6f MHz -> actual %.6f MHz\n", freq / 1e6, actual_tx_rate / 1e6);
+  handler->tx_rate = actual_tx_rate;
+  return actual_tx_rate;
 }
 
 double rf_uhd_set_rx_gain(void* h, double gain)

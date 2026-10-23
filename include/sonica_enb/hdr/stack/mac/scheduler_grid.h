@@ -24,6 +24,7 @@
 #define SRSLTE_NB_SCHEDULER_GRID_H
 
 #include "srslte/interfaces/sched_interface_nb.h"
+#include "scheduler.h"
 #include "scheduler_ue.h"
 #include "srslte/common/bounded_bitset.h"
 #include "srslte/common/log.h"
@@ -83,6 +84,7 @@ public:
  *               Converts the stored allocations' metadata to the scheduler DL/UL result
  *               Handles the generation of DCI formats
  */
+
 class sf_sched : public dl_sf_sched_itf, public ul_sf_sched_itf
 {
 public:
@@ -145,6 +147,7 @@ public:
   // Control/Configuration Methods
   sf_sched();
 //  void init(const sched_cell_params_t& cell_params_);
+  void set_carrier_sched(sched::carrier_sched *p) { carrier_sched = p; }
   void new_tti(uint32_t tti_rx_);
 //
 //  // DL alloc methods
@@ -208,6 +211,7 @@ private:
   std::vector<dl_alloc_t>  data_allocs;
   std::vector<ul_alloc_t>  ul_data_allocs;
   uint32_t                 last_msg3_prb = 0, max_msg3_prb = 6; // JH: Set max_msg3_prb = 6
+  sched::carrier_sched*    carrier_sched;
 
   // Next TTI state
   tti_params_t tti_params{10241};

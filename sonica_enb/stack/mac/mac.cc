@@ -347,6 +347,10 @@ void mac::rach_detected(uint32_t tti, uint32_t preamble_idx, uint32_t time_adv)
     // Future: NB UE parameters init here
     ue_cfg.ue_bearers[0].direction             = sonica_enb::sched_interface::ue_bearer_cfg_t::BOTH;
     ue_cfg.dl_cfg.tm                           = SRSLTE_TM1;
+    ue_cfg.dl_max_i_sf                         = args.dl_max_i_sf;
+    ue_cfg.dl_max_mcs                          = args.dl_max_mcs;
+    ue_cfg.ul_max_i_ru                         = args.ul_max_i_ru;
+    ue_cfg.ul_max_mcs                          = args.ul_max_mcs;
 
     if (scheduler.ue_cfg(rnti, ue_cfg) != SRSLTE_SUCCESS) {
       Error("Registering new user rnti=0x%x to SCHED\n", rnti);

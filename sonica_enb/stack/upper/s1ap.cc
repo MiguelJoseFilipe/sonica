@@ -300,7 +300,7 @@ void s1ap::build_tai_cgi()
 }
 
 /*******************************************************************************
-/* RRC interface
+ * RRC interface
 ********************************************************************************/
 void s1ap::initial_ue(uint16_t rnti, asn1::s1ap::rrc_establishment_cause_e cause, srslte::unique_byte_buffer_t pdu)
 {
@@ -418,7 +418,7 @@ bool s1ap::is_mme_connected()
 }
 
 /*******************************************************************************
-/* S1AP connection helpers
+ * S1AP connection helpers
 ********************************************************************************/
 
 bool s1ap::connect_mme()
@@ -445,14 +445,14 @@ bool s1ap::connect_mme()
 
 bool s1ap::setup_s1()
 {
-  uint32_t tmp32;
+  // uint32_t tmp32;
   uint16_t tmp16;
 
   uint32_t plmn;
   s1ap_mccmnc_to_plmn(args.mcc, args.mnc, &plmn);
   plmn = htonl(plmn);
 
-  tmp32 = htonl(args.enb_id);
+  // tmp32 = htonl(args.enb_id);
 
   s1ap_pdu_c pdu;
   pdu.set_init_msg().load_info_obj(ASN1_S1AP_ID_S1_SETUP);
@@ -480,7 +480,7 @@ bool s1ap::setup_s1()
 }
 
 /*******************************************************************************
-/* S1AP message handlers
+ * S1AP message handlers
 ********************************************************************************/
 
 bool s1ap::handle_mme_rx_msg(srslte::unique_byte_buffer_t pdu,
@@ -677,8 +677,9 @@ bool s1ap::handle_paging(const asn1::s1ap::paging_s& msg)
   if (msg.ext) {
     s1ap_log->warning("Not handling S1AP message extension\n");
   }
-  uint32_t ueid = msg.protocol_ies.ue_id_idx_value.value.to_number();
-//  TODO: rrc->add_paging_id(ueid, msg.protocol_ies.ue_paging_id.value);
+  // TODO
+  // uint32_t ueid = msg.protocol_ies.ue_id_idx_value.value.to_number();
+  // rrc->add_paging_id(ueid, msg.protocol_ies.ue_paging_id.value);
   return true;
 }
 
@@ -800,7 +801,7 @@ bool s1ap::handle_s1hocommand(const asn1::s1ap::ho_cmd_s& msg)
 }
 
 /*******************************************************************************
-/* S1AP message senders
+ * S1AP message senders
 ********************************************************************************/
 
 bool s1ap::ue::send_initialuemessage(asn1::s1ap::rrc_establishment_cause_e cause,
@@ -1156,7 +1157,7 @@ void s1ap::user_list::erase(ue* ue_ptr)
 }
 
 /*******************************************************************************
-/* General helpers
+ * General helpers
 ********************************************************************************/
 
 bool s1ap::sctp_send_s1ap_pdu(const asn1::s1ap::s1ap_pdu_c& tx_pdu, uint32_t rnti, const char* procedure_name)
@@ -1256,7 +1257,7 @@ void s1ap::start_pcap(srslte::s1ap_pcap* pcap_)
   pcap = pcap_;
 }
 /*******************************************************************************
-/*               s1ap::ue Class
+ *               s1ap::ue Class
 ********************************************************************************/
 
 s1ap::ue::ue(s1ap* s1ap_ptr_) : s1ap_ptr(s1ap_ptr_), s1ap_log(s1ap_ptr_->s1ap_log), ho_prep_proc(this)

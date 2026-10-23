@@ -258,10 +258,10 @@ const int tbs_table_nbiot[13][8] = {{16, 32, 56, 88, 120, 152, 208, 256},
 int sched_ue::generate_formatN0(sched_interface::ul_sched_data_t* data,
                                 //                               uint32_t                          tti,
                                 //                               uint32_t                          cc_idx,
-                                //                               ul_harq_proc::ul_alloc_t          alloc,
-                                bool needs_npdcch,
+                                ul_harq_proc::ul_alloc_t          alloc,
+                                bool                              needs_pdcch,
                                 //                               srslte_dci_location_t             dci_pos,
-                                int explicit_mcs)
+                                int                               explicit_mcs)
 {
   // Future: add the harq related functions later
   //  ul_harq_proc*    h   = get_ul_harq(tti, cc_idx);
@@ -269,7 +269,7 @@ int sched_ue::generate_formatN0(sched_interface::ul_sched_data_t* data,
   srslte_nbiot_dci_ul_t* dci = &data->dci;
 
   // Set DCI position
-  data->needs_npdcch = needs_npdcch;
+  data->needs_npdcch = needs_pdcch;
 
   int mcs = (explicit_mcs >= 0) ? explicit_mcs : carriers[0].fixed_mcs_ul;
   int tbs = 0;
@@ -277,7 +277,7 @@ int sched_ue::generate_formatN0(sched_interface::ul_sched_data_t* data,
   // uint32_t nof_retx;
   uint32_t i_tbs  = 0;
   uint32_t nof_sc = 12; // Currently only support sc=12
-  uint32_t i_ru   = 3;  // Currently only support RU number=4 (MCS0)
+  uint32_t i_ru   = alloc.i_ru;  // Currently only support RU number=4 (MCS0)
 
   if (mcs >= 0) {
     if (nof_sc == 1) {
@@ -324,8 +324,7 @@ int sched_ue::generate_formatN1(sched_interface::dl_sched_data_t* data,
   uint32_t                      data_size = get_pending_dl_new_data();
   std::pair<uint32_t, uint32_t> req_bytes = get_requested_dl_bytes(0);
 
-  // Currently only support sc=12
-  for (uint32_t mcs = 0; mcs <13; mcs++) {
+  for (uint32_t mcs = 0; mcs <= cfg.dl_max_mcs; mcs++) {
     tbs_bytes = tbs_table_nbiot[mcs][i_sf] / 8;
     if (tbs_bytes > req_bytes.second) {
       final_mcs = mcs;
@@ -338,7 +337,7 @@ int sched_ue::generate_formatN1(sched_interface::dl_sched_data_t* data,
     printf("MAC sched_ue::generate_formatN1: cannot find suitable MCS to send all pending data\n");
 
     printf("NB-IoT: MAC sched_ue::generate_formatN1: --------------------- tmp select MCS=12\n");
-    final_mcs = 12;
+    final_mcs = cfg.dl_max_mcs;
     //    return 0;
   }
 
@@ -356,7 +355,7 @@ int sched_ue::generate_formatN1(sched_interface::dl_sched_data_t* data,
   if (rem_tbs != tbs_bytes) {
     //    h->new_tx(user_mask, tb, tti_tx_dl, mcs, tbs, data->dci.location.ncce);
     Debug("SCHED: Alloc DCI format N1 new mcs=%d, tbs=%d\n", final_mcs, tbs_bytes);
-    printf("SCHED:sched_ue::generate_formatN1 Alloc DCI format N1 new mcs=%d, tbs=%d\n", final_mcs, tbs_bytes);
+    printf("SCHED:sched_ue::generate_formatN1 Alloc DCI format N1 new mcs=%d, tbs=%d, ndi=%d for %p\n", final_mcs, tbs_bytes, dl_ndi, this);
   } else {
     //    Warning("SCHED: Failed to allocate DL harq pid=%d\n", h->get_id());
   }
@@ -364,7 +363,7 @@ int sched_ue::generate_formatN1(sched_interface::dl_sched_data_t* data,
   if (tbs_bytes > 0) {
     dci->mcs_idx         = final_mcs;
     dci->rv_idx         = 0;
-    dci->ndi             = true;
+    dci->ndi             = dl_ndi;
     dci->format          = 1; // FormatN1 DCI
     dci->alloc.has_sib1  = false;
     dci->alloc.is_ra     = false;
@@ -374,9 +373,59 @@ int sched_ue::generate_formatN1(sched_interface::dl_sched_data_t* data,
     dci->alloc.i_rep     = 0;    // i_rep_val
     dci->alloc.harq_ack  = 1;
     dci->alloc.i_n_start = 0;
+    if (rem_tbs != tbs_bytes)
+    {
+      dl_ndi = !dl_ndi;
+    }
   }
 
   return tbs_bytes;
+}
+
+uint16_t sched_ue::calc_dl_i_sf(uint32_t max_tbs)
+{
+  for (int i = 0; i <= cfg.dl_max_i_sf; i++) {
+    uint32_t cur_tbs = tbs_table_nbiot[cfg.dl_max_mcs][i];
+    // For CAT-NB1, the maximum possible TBS is 680
+    if (cur_tbs >= max_tbs || cur_tbs == 680) {
+      return i;
+    }
+  }
+
+  return cfg.dl_max_i_sf;
+}
+
+uint16_t sched_ue::calc_ul_i_ru(uint32_t max_tbs, uint32_t& mcs)
+{
+  uint16_t i_ru = -1;
+  for (int i = 0; i <= cfg.ul_max_i_ru; i++) {
+    uint32_t cur_tbs = tbs_table_npusch[cfg.ul_max_mcs][i];
+    // For CAT-NB1, the maximum possible TBS is 1000
+    if (cur_tbs >= max_tbs || cur_tbs == 1000) {
+      i_ru = i;
+      break;
+    }
+    if (cur_tbs == 0) {
+      i_ru = i - 1;
+      break;
+    }
+  }
+
+  if (i_ru < 0) {
+    i_ru = cfg.ul_max_i_ru;
+  }
+
+  max_tbs = tbs_table_npusch[cfg.ul_max_mcs][i_ru];
+
+  for (int i = 2; i <= cfg.ul_max_mcs; i++) {
+    uint32_t cur_tbs = tbs_table_npusch[i][i_ru];
+    // For CAT-NB1, the maximum possible TBS is 1000
+    if (cur_tbs >= max_tbs || cur_tbs == 1000) {
+      mcs = i;
+      break;
+    }
+  }
+  return i_ru;
 }
 
 constexpr uint32_t min_mac_sdu_size = 5; // accounts for MAC SDU subheader and RLC header

@@ -186,6 +186,9 @@ public:
     rlc_cfg.am.t_status_prohibit = 0;
     if (idx == 3) {
       rlc_cfg.am.is_srb1bis = true;
+      rlc_cfg.am.poll_pdu = 10;
+      rlc_cfg.am.poll_byte = 1600;
+      rlc_cfg.am.t_poll_retx = 450;
     }
     return rlc_cfg;
   }

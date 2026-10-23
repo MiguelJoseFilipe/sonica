@@ -25,7 +25,7 @@
 #include "srslte/asn1/gtpc.h"
 #include <inttypes.h> // for printing uint64_t
 
-
+/*
 static uint8_t old_dummy_pkt[84] = {
     0x45, 0x00, 0x00, 0x54, 0x80, 0xd2, 0x40, 0x00,
     0x40, 0x01, 0xfd, 0xb4, 0xac, 0x10, 0x00, 0x02,
@@ -47,6 +47,7 @@ static uint8_t dummy_pkt[84] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
 };
+*/
 
 namespace srsepc {
 
@@ -108,8 +109,6 @@ bool mme_gtpc::init(s11u_ep *ep, srslte::log_filter* mme_gtpc_log)
 
 bool mme_gtpc::init_s11()
 {
-
-  socklen_t sock_len;
   char      mme_addr_name[]  = "@mme_s11";
   char      spgw_addr_name[] = "@spgw_s11";
 
@@ -198,8 +197,6 @@ bool mme_gtpc::send_create_session_request(uint64_t imsi, bool cp_ciot)
   m_mme_gtpc_log->console("Sending Create Session Request.\n");
   struct srslte::gtpc_pdu                     cs_req_pdu;
   struct srslte::gtpc_create_session_request* cs_req = &cs_req_pdu.choice.create_session_request;
-
-  struct srslte::gtpc_pdu cs_resp_pdu;
 
   // Initialize GTP-C message to zero
   bzero(&cs_req_pdu, sizeof(struct srslte::gtpc_pdu));
@@ -352,6 +349,10 @@ bool mme_gtpc::handle_create_session_response(srslte::gtpc_pdu* cs_resp_pdu)
 
   // TODO: NB-IoT: Do not need to send the initial context setup
 //  m_s1ap->m_s1ap_ctx_mngmt_proc->send_initial_context_setup_request(nas_ctx, default_bearer);
+
+  // Set IP and TEID in esm_ctx for NB-IoT
+  esm_ctx->enb_fteid.ipv4 = cs_resp->paa.ipv4;
+  esm_ctx->enb_fteid.teid = cs_resp->eps_bearer_context_created.s1_u_sgw_f_teid.teid;
 
   // TODO: NB-IoT: Send Attach Accept to UE
   srslte::byte_buffer_t* nas_tx;
@@ -531,7 +532,6 @@ void mme_gtpc::send_release_access_bearers_request(uint64_t imsi)
   header->teid                = sgw_ctr_fteid.teid;
   header->type                = srslte::GTPC_MSG_TYPE_RELEASE_ACCESS_BEARERS_REQUEST;
 
-  srslte::gtpc_release_access_bearers_request* rel_req = &rel_req_pdu.choice.release_access_bearers_request;
   m_mme_gtpc_log->info("GTP-C Release Access Berarers Request -- S-GW Control TEID %d\n", sgw_ctr_fteid.teid);
 
   // Send msg to SPGW
@@ -582,8 +582,6 @@ void mme_gtpc::send_downlink_data_notification_acknowledge(uint64_t imsi, enum s
   header->teid                = sgw_ctr_fteid.teid;
   header->type                = srslte::GTPC_MSG_TYPE_DOWNLINK_DATA_NOTIFICATION_ACKNOWLEDGE;
 
-  srslte::gtpc_downlink_data_notification_acknowledge* not_ack =
-      &not_ack_pdu.choice.downlink_data_notification_acknowledge;
   m_mme_gtpc_log->info("gtp-c downlink data notification acknowledge -- s-gw control teid %d\n", sgw_ctr_fteid.teid);
 
   // send msg to spgw

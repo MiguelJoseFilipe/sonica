@@ -458,6 +458,10 @@ typedef struct {
   uint32_t                      nof_prb; ///< Needed to dimension MAC softbuffers for all cells
   // sched_interface::sched_args_t sched;
   int                           link_failure_nof_err;
+  int                           dl_max_mcs;
+  int                           dl_max_i_sf;
+  int                           ul_max_mcs;
+  int                           ul_max_i_ru;
 } mac_args_t;
 
 class stack_interface_s1ap_nb

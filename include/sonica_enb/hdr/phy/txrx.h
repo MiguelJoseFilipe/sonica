@@ -32,6 +32,30 @@
 #include "srslte/phy/channel/channel.h"
 #include "srslte/radio/radio.h"
 
+#include <atomic>
+#include <chrono>
+#include <mutex>
+
+// Experiment clock: pass time received from the clock server at the last
+// synchronization, and local wall-clock time of that synchronization (s)
+struct ExperimentTimes {
+  double experiment_time;
+  double start_time;
+};
+extern ExperimentTimes experiment_times;
+extern std::mutex experiment_times_mutex;
+
+// The pass clock is anchored at the first transmitted subframe and re-synchronized
+// with the clock server; sf_worker extrapolates it and loops over the pass.
+extern std::atomic<bool> g_tx_started;  // set at the first transmitted subframe
+extern double g_pass_start_offset;      // -visibility_time/2: start of the pass and of the Doppler table
+extern double g_vis_time;               // visibility time (loop period)
+
+// Calibration ("Calibration Mode = 1" in config.txt): transmit a constant Doppler
+// ("Calibration Doppler Hz", 0 by default) instead of the orbital curve.
+extern std::atomic<bool> g_calibration;
+extern std::atomic<double> g_calibration_doppler_hz;
+
 namespace sonica_enb {
 
 class txrx final : public srslte::thread

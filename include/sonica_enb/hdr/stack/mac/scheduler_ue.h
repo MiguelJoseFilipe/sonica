@@ -169,7 +169,7 @@ public:
   int generate_formatN0(sched_interface::ul_sched_data_t* data,
 //                       uint32_t                          tti,
 //                       uint32_t                          cc_idx,
-//                       ul_harq_proc::ul_alloc_t          alloc,
+                       ul_harq_proc::ul_alloc_t          alloc,
                        bool                              needs_pdcch,
 //                       srslte_dci_location_t             cce_range,
                        int                               explicit_mcs = -1);
@@ -181,6 +181,10 @@ public:
                         bool needs_pdcch,
                         //                       srslte_dci_location_t             cce_range,
                         uint32_t i_sf);
+
+  void clear_dl_alloc_acc() { dl_allocs_acc = 0; }
+  void add_dl_alloc_acc() { dl_allocs_acc++; }
+  uint32_t get_dl_alloc_acc() { return dl_allocs_acc; }
 
 //  srslte_dci_format_t get_dci_format();
 //  sched_dci_cce_t*    get_locations(uint32_t enb_cc_idx, uint32_t current_cfi, uint32_t sf_idx);
@@ -200,6 +204,9 @@ public:
 //                        bool      is_ul,
 //                        uint32_t* mcs);
   uint32_t msg_wait_timer = 0;
+
+  uint16_t calc_dl_i_sf(uint32_t max_tbs);
+  uint16_t calc_ul_i_ru(uint32_t max_tbs, uint32_t& mcs);
 
 private:
   struct ue_bearer_t {
@@ -272,11 +279,15 @@ private:
 //  int      power_headroom  = 0;
   uint32_t cqi_request_tti = 0;
   uint16_t rnti            = 0;
+  uint16_t dl_ndi          = 0;
+  uint16_t ul_ndi          = 0;
 //  uint32_t max_msg3retx    = 0;
 
 //  /* User State */
 //  int next_tpc_pusch = 0;
 //  int next_tpc_pucch = 0;
+
+  uint32_t dl_allocs_acc = 0;
 
   bool phy_config_dedicated_enabled = false;
 

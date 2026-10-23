@@ -316,6 +316,7 @@ bool ue::process_ce(srslte::sch_subh* subh)
       if (sched->ue_exists(old_rnti)) {
         // rrc->upd_user(rnti, old_rnti);
         rnti = old_rnti;
+        discard_tcrnti = true;
       } else {
         Error("Updating user C-RNTI: rnti=0x%x already released\n", old_rnti);
       }
@@ -327,6 +328,10 @@ bool ue::process_ce(srslte::sch_subh* subh)
         Error("Invalid Index Passed to lc groups\n");
         printf("Invalid Index Passed to lc groups\n");
         break;
+      }
+      // If UE submits BSR in Msg3, Make it greater than 0
+      if (discard_tcrnti && buff_size[idx] < 5) {
+        buff_size[idx] = 5;
       }
       //      for (uint32_t i = 0; i < lc_groups[idx].size(); i++) {
       //        // Indicate BSR to scheduler
@@ -389,7 +394,7 @@ void ue::allocate_sdu(srslte::sch_pdu* pdu, uint32_t lcid, uint32_t total_sdu_le
         log_h->debug("SDU:   set_sdu(), lcid=%d, sdu_len=%d, sdu_space=%d\n", lcid, sdu_len, sdu_space);
         n = pdu->get()->set_sdu(lcid, sdu_len, this);
         if (n > 0) { // new SDU could be added
-          sdu_len -= n;
+          sdu_len -= n + 2;
           log_h->debug("SDU:   rnti=0x%x, lcid=%d, nbytes=%d, rem_len=%d\n", rnti, lcid, n, sdu_len);
         } else {
           Debug("Could not add SDU lcid=%d nbytes=%d, space=%d\n", lcid, sdu_len, sdu_space);

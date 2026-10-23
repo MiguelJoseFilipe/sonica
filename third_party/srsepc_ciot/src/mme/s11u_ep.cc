@@ -40,7 +40,6 @@ int s11u_ep::init(srslte::log_ref logger_)
 {
   m_log = logger_;
 
-  socklen_t sock_len;
   char      spgw_addr_name[] = "@spgw_s11u";
   char      mme_addr_name[]  = "@mme_s11u";
 
@@ -139,12 +138,12 @@ void s11u_ep::handle_s11u_pdu(srslte::byte_buffer_t* msg)
 
   uint32_t mme_ctrl_teid = header.teid;
   printf("NB-IoT: s11u_ep::handle_s11u_pdu-------------------------TEID from header is %d\n", mme_ctrl_teid);
-  // TODO: The teid does not match, tmp hack
-  mme_ctrl_teid                                  = 1;
+
   std::map<uint32_t, uint64_t>::iterator imsi_it = m_mme_ctr_teid_to_imsi->find(mme_ctrl_teid);
   if (imsi_it == m_mme_ctr_teid_to_imsi->end()) {
     printf("NB-IoT: s11u_ep::handle_s11u_pdu-------------------------Could not find IMSI from control TEID %d\n",
            mme_ctrl_teid);
+    return;
   } else {
     printf("NB-IoT: s11u_ep::handle_s11u_pdu-------------------------find IMSI=%ld from control TEID %d\n",
            imsi_it->second,

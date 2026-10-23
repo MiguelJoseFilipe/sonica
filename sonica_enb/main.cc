@@ -94,6 +94,12 @@ int parse_args(all_args_t* args, int argc, char* argv[])
   rf->add_option("--device_args", args->rf.device_args, "Front-end device arguments")->default_val("auto");
   rf->add_option("--time_adv_nsamples", args->rf.time_adv_nsamples, "Transmission time advance")->default_val("auto");
 
+  CLI::App *mac = app.add_subcommand("mac")->configurable();
+  mac->add_option("--dl_max_mcs", args->stack.mac.dl_max_mcs, "Maximum MCS to be used for DL")->default_val(12);
+  mac->add_option("--dl_max_i_sf", args->stack.mac.dl_max_i_sf, "Maximum I_SF to be used for DL")->default_val(7);
+  mac->add_option("--ul_max_mcs", args->stack.mac.ul_max_mcs, "Maximum MCS to be used for UL")->default_val(10);
+  mac->add_option("--ul_max_i_ru", args->stack.mac.ul_max_i_ru, "Maximum I_RU to be used for UL")->default_val(7);
+
   CLI::App *log = app.add_subcommand("log")->configurable();
   log->add_option("--rf_level", args->rf.log_level, "RF log level");
   log->add_option("--phy_level", args->phy.log.phy_level, "PHY log level");
@@ -336,7 +342,7 @@ int main(int argc, char* argv[])
   pthread_t input;
   pthread_create(&input, nullptr, &input_loop, NULL /* &metrics_screen */);
 
-  bool signals_pregenerated = false;
+  // bool signals_pregenerated = false;
   // if (running) {
   //   if (args.gui.enable) {
   //     enb->start_plot();

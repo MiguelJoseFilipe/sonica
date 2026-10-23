@@ -121,6 +121,7 @@ private:
   uint32_t          nof_failures     = 0;
   int               nof_rx_harq_proc = 0;
   int               nof_tx_harq_proc = 0;
+  bool              discard_tcrnti   = false;
 
   //  typedef std::vector<srslte_softbuffer_tx_t>
   //     cc_softbuffer_tx_list_t; ///< List of Tx softbuffers for all HARQ processes of one carrier

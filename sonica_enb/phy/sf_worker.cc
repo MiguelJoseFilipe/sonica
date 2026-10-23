@@ -22,8 +22,31 @@
 #include "srslte/common/log.h"
 #include "srslte/common/threads.h"
 #include "srslte/srslte.h"
+#include <complex.h>
+#include <complex>
+#include <math.h>
+#include <cmath>
+#include <iostream>
+#include <fstream>
+#include <chrono>
+#include <random>
+#include <vector>
+#include <atomic>
 
 #include "sonica_enb/hdr/phy/sf_worker.h"
+#include "sonica_enb/hdr/phy/txrx.h"
+extern ExperimentTimes experiment_times;
+extern std::mutex experiment_times_mutex;
+// Pass clock (defined in txrx.cc, see txrx.h)
+extern std::atomic<bool> g_tx_started;
+extern double g_pass_start_offset;
+extern double g_vis_time;
+extern std::atomic<bool> g_calibration;
+extern std::atomic<double> g_calibration_doppler_hz;
+#include "sonica_enb/hdr/phy/doppler_shift.h"
+
+
+#define _USE_MATH_DEFINES
 
 #define Error(fmt, ...)                                                                                                \
   if (SRSLTE_DEBUG_ENABLED)                                                                                            \
@@ -46,7 +69,6 @@ using namespace std;
 
 // Enable this one to skip SI-RNTI
 #define LOG_THIS(rnti) (rnti != 0xFFFF)
-
 
 using namespace asn1::rrc;
 
@@ -170,8 +192,8 @@ void sf_worker::set_time(uint32_t hfn_, uint32_t tti_, uint32_t tx_worker_cnt_, 
   srslte_timestamp_copy(&tx_time, &tx_time_);
 }
 
-void sf_worker::work_imp()
-{
+void sf_worker::work_imp() {
+
   std::lock_guard<std::mutex> lock(work_mutex);
 
   log_h->step(tti_rx);
@@ -185,7 +207,6 @@ void sf_worker::work_imp()
     phy->worker_end(this, tx_buffer, 0, tx_time);
     return;
   }
-
   stack_interface_phy_nb* stack = phy->stack;
 
   // Downlink grants to transmit this TTI
@@ -210,21 +231,20 @@ void sf_worker::work_imp()
     return;
   }
 
-  if(dl_grants[0].nof_grants > 0 && dl_grants[0].npdsch.has_npdcch){
+  if (dl_grants[0].nof_grants > 0 && dl_grants[0].npdsch.has_npdcch) {
     printf("TTI %d: DL grant available. has_npdcch. nof_grants=%d\n", tti_tx_dl, dl_grants[0].nof_grants);
     printf("TTI %d: DL tti_rx=%d, tti_tx_ul=%d \n", tti_tx_dl, tti_rx, tti_tx_ul);
     uint8_t* dl_data = dl_grants[0].npdsch.data[0];
 
     uint32_t test_print_len = 50;
     printf("PHY: sf_worker------------DL DATA Start: length=%d\n", test_print_len);
-    for(uint32_t i =0; i<test_print_len; i++){
+    for (uint32_t i = 0; i < test_print_len; i++) {
       printf("0x%02x ", dl_data[i]);
     }
     printf("\nPHY: sf_worker------------DL DATA End\n");
-
   }
 
-  if(ul_grants_tx[0].nof_grants > 0){
+  if (ul_grants_tx[0].nof_grants > 0) {
     printf("TTI %d: UL grant available. nof_grants=%d\n", tti_rx, ul_grants_tx[0].nof_grants);
     printf("TTI %d: t_rx=%d, t_tx_ul=%d \n", tti_rx, t_rx, t_tx_ul);
 
@@ -236,7 +256,6 @@ void sf_worker::work_imp()
       npusch_rnti = ul_grants_tx[0].npusch[0].dci.rnti;
       npusch_start = ugrant.tx_tti;
       npusch_data  = ul_grants_tx[0].npusch[0].data;
-      //sonica_enb_ul_nbiot_cfg_grant(&enb_ul, &ugrant, npusch_rnti);
       printf("  Recording grants for R%x, G%d=%d\n", npusch_rnti, ugrant.tx_tti, tti_tx_ul);
       has_ugrant = true;
     }
@@ -254,10 +273,72 @@ void sf_worker::work_imp()
   phy->set_ul_grants(t_rx, ul_grants);
 
   work_dl(dl_grants[0], ul_grants_tx[0]);
+  int maxElevation = *pointer_maxElevation;
 
-  // TODO
+  // Pass time: extrapolated from the last clock synchronization and looped over
+  // [-vis/2, +vis/2). No Doppler before the first transmitted subframe.
+  using namespace std::chrono;
+  double ref_experiment_time, ref_wall_sec;
+  {
+    std::lock_guard<std::mutex> lock(experiment_times_mutex);
+    ref_experiment_time = experiment_times.experiment_time;
+    ref_wall_sec        = experiment_times.start_time;
+  }
+  auto now = system_clock::now();
+  double now_sec = duration_cast<duration<double>>(now.time_since_epoch()).count();
+  float doppler = 0.0f;
+  // Calibration: constant Doppler; otherwise the Doppler of the pass
+  if (g_calibration.load()) {
+    doppler = static_cast<float>(g_calibration_doppler_hz.load());
+  } else if (g_tx_started.load()) {
+    double real = now_sec - ref_wall_sec + ref_experiment_time;
+    double pass_t = g_pass_start_offset + std::fmod(real - g_pass_start_offset, g_vis_time);
+    if (pass_t < g_pass_start_offset) pass_t += g_vis_time;
+    doppler = doppler_shift::get_precomputed_doppler(doppler_table,
+                                                     g_pass_start_offset,
+                                                     0.1,
+                                                     pass_t);
+  }
+
+  // Phasor sampling rate: the radio rate of the cell (1.92 MHz for NB-IoT)
+  const float fs = static_cast<float>(SRSLTE_SF_LEN_PRB(phy->get_nof_prb()) * 1000u);
+  // Precompute phasor increment per sample
+  float delta_angle = 2.0f * M_PI * doppler / fs;
+  float cos_delta = cosf(delta_angle);
+  float sin_delta = sinf(delta_angle);
+
+  // Loop over antennas
+  for (uint32_t ant = 0; ant < phy->get_nof_ports(); ant++) {
+      cf_t* buffer = get_buffer_tx(ant);
+      uint32_t buffer_len = SRSLTE_SF_LEN_PRB(phy->get_nof_prb());
+
+      // Initialize phasor at 0 angle
+      float phasor_re = 1.0f;
+      float phasor_im = 0.0f;
+
+      for (uint32_t i = 0; i < buffer_len; i++) {
+          float re = crealf(buffer[i]);
+          float im = cimagf(buffer[i]);
+
+          // Apply current phasor rotation
+          float shifted_re = re * phasor_re - im * phasor_im;
+          float shifted_im = re * phasor_im + im * phasor_re;
+
+          __real__ buffer[i] = shifted_re;
+          __imag__ buffer[i] = shifted_im;
+
+          // Rotate phasor for next sample: phasor *= delta
+          float new_re = phasor_re * cos_delta - phasor_im * sin_delta;
+          float new_im = phasor_re * sin_delta + phasor_im * cos_delta;
+          phasor_re = new_re;
+          phasor_im = new_im;
+      }
+  }
+
+
   phy->worker_end(this, tx_buffer, SRSLTE_SF_LEN_PRB(phy->get_nof_prb()), tx_time);
 }
+
 
 
 static void log_data(uint8_t *data, uint32_t len)
@@ -315,7 +396,6 @@ void sf_worker::work_ul(stack_interface_phy_nb::ul_sched_list_t ul_grants)
 }
 
 // TODO: Assign DCI with HARQ in MAC
-static bool h_ndi_dl = false;
 static bool h_ndi_ul = false;
 
 void sf_worker::work_dl(stack_interface_phy_nb::dl_sched_t& dl_grants,
@@ -408,9 +488,6 @@ void sf_worker::work_dl(stack_interface_phy_nb::dl_sched_t& dl_grants,
                                         DUMMY_R_MAX, false, cell.mode);
         dl_pending_grants.push_back({ grant, dci->alloc.rnti, dl_grants.npdsch.data[0] });
 
-        dci->ndi = h_ndi_dl;
-        h_ndi_dl = !h_ndi_dl;
-
         sonica_enb_dl_nbiot_put_npdcch_dl(&enb_dl, dci, sf_idx);
       }
     }
@@ -436,7 +513,26 @@ void sf_worker::work_dl(stack_interface_phy_nb::dl_sched_t& dl_grants,
                                        npdsch_data, npdsch_rnti)) {
       ERROR("Error encoding NPDSCH\n");
     }
-    printf("S %d.%d => %d\n", sfn, sf_idx, npdsch_rnti);
+    // First transmitted subframe: start the local pass clock at the beginning of
+    // the pass; ServerClockThread then synchronizes it with the server. No
+    // per-subframe print here: stdout writes can stall this real-time thread.
+    {
+      static std::atomic<bool> anchoring{false};
+      bool expected = false;
+      if (!g_tx_started.load(std::memory_order_acquire) &&
+          anchoring.compare_exchange_strong(expected, true)) {
+        auto tnow = std::chrono::system_clock::now();
+        double tnow_sec = std::chrono::duration_cast<std::chrono::duration<double>>(
+                              tnow.time_since_epoch()).count();
+        {
+          std::lock_guard<std::mutex> lock(experiment_times_mutex);
+          experiment_times.experiment_time = g_pass_start_offset;
+          experiment_times.start_time      = tnow_sec;
+        }
+        g_tx_started.store(true, std::memory_order_release);
+        printf("S %d.%d => %d  (first transmitted subframe -- pass clock anchored)\n", sfn, sf_idx, npdsch_rnti);
+      }
+    }
     if (npdsch_rnti != SRSLTE_SIRNTI) {
       log_data(npdsch_data, 7);
     }
@@ -449,5 +545,7 @@ void sf_worker::work_dl(stack_interface_phy_nb::dl_sched_t& dl_grants,
 
   sonica_enb_dl_nbiot_gen_signal(&enb_dl);
 }
+
+
 
 } // namespace sonica_enb

@@ -25,6 +25,7 @@
 #include "enb_cfg_parser.h"
 #include "sonica/build_info.h"
 #include <iostream>
+#include <fstream>
 
 namespace sonica_enb {
 
@@ -81,7 +82,7 @@ int enb_nb::init(const all_args_t& args_, srslte::logger* logger_)
   }
 
   // Init layers
-  if (lte_radio->init(args.rf, nullptr)) {
+  if (lte_radio->init(args.rf, nb_phy.get())) {
     log.console("Error initializing radio.\n");
     ret = SRSLTE_ERROR;
   }
@@ -102,6 +103,14 @@ int enb_nb::init(const all_args_t& args_, srslte::logger* logger_)
   radio = std::move(lte_radio);
 
   log.console("\n==== eNodeB started ===\n");
+  // npss.txt tells external tools that the eNB is transmitting
+  std::ofstream file("npss.txt");
+  if (file.is_open()) {
+    file << "1";
+    file.close();
+  } else {
+    log.console("Error: Unable to create npss.txt\n");
+  }
   log.console("Type <t> to view trace\n");
 
   started = (ret == SRSLTE_SUCCESS);
@@ -123,6 +132,11 @@ void enb_nb::stop()
 
     if (radio) {
       radio->stop();
+    }
+    if (std::remove("npss.txt") == 0) {
+      log.console("npss.txt deleted successfully.\n");
+    } else {
+      log.console("Error: Unable to delete npss.txt\n");
     }
 
     started = false;

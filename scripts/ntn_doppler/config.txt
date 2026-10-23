@@ -1,0 +1,17 @@
+# NTN Doppler emulation for the NB-IoT eNB.
+# The eNB reads this file as ../../../config.txt relative to its working
+# directory; the clock server (TCP_server.py) reads config.txt in its own.
+
+### Pass ###
+Maximum elevation = 60
+Carrier frequency = 2154884190
+AWGN = 0.0
+FSPL = 0.0
+
+## Calibration ##
+# 1 -> transmit a constant Doppler ("Calibration Doppler Hz") instead of the pass
+Calibration Mode = 0
+Calibration Doppler Hz = 0
+
+## Clock server ##
+REMOTE_IP = 127.0.0.1

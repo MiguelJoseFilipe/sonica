@@ -23,7 +23,6 @@
 #ifndef SRSENB_NB_SCHEDULER_H
 #define SRSENB_NB_SCHEDULER_H
 
-#include "scheduler_grid.h"
 #include "scheduler_harq.h"
 #include "scheduler_ue.h"
 #include "srslte/common/log.h"

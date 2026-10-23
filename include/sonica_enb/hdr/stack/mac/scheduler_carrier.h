@@ -24,6 +24,7 @@
 #define SRSLTE_NB_SCHEDULER_CARRIER_H
 
 #include "scheduler.h"
+#include "scheduler_grid.h"
 
 namespace sonica_enb {
 
@@ -41,6 +42,8 @@ public:
 //  void                   set_dl_tti_mask(uint8_t* tti_mask, uint32_t nof_sfs);
   const sf_sched_result& generate_tti_result(uint32_t hfn, uint32_t tti_rx, bool dl_flag);
   int                    dl_rach_info(dl_sched_rar_info_t rar_info);
+  bool                   is_dl_subframe(uint32_t tti);
+  bool                   in_dci_searchspace(uint32_t tti);
 
 //  // getters
 //  const ra_sched* get_ra_sched() const { return ra_sched_ptr.get(); }

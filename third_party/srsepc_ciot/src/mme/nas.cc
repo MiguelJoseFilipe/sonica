@@ -84,8 +84,6 @@ bool nas::handle_attach_request(uint32_t                enb_ue_s1ap_id,
 
   // Interfaces
   s1ap_interface_nas* s1ap = itf.s1ap;
-  hss_interface_nas*  hss  = itf.hss;
-  gtpc_interface_nas* gtpc = itf.gtpc;
 
   // Get NAS Attach Request and PDN connectivity request messages
   LIBLTE_ERROR_ENUM err = liblte_mme_unpack_attach_request_msg((LIBLTE_BYTE_MSG_STRUCT*)nas_rx, &attach_req);
@@ -212,8 +210,6 @@ bool nas::handle_nb_attach_request(uint32_t                enb_ue_s1ap_id,
 
   // Interfaces
   s1ap_interface_nas* s1ap = itf.s1ap;
-  hss_interface_nas*  hss  = itf.hss;
-  gtpc_interface_nas* gtpc = itf.gtpc;
 
   // Get NAS Attach Request and PDN connectivity request messages
   LIBLTE_ERROR_ENUM err = liblte_mme_unpack_nb_attach_request_msg((LIBLTE_BYTE_MSG_STRUCT*)nas_rx, &attach_req);
@@ -355,7 +351,6 @@ bool nas::handle_imsi_attach_request_unknown_ue(uint32_t                        
   // Interfaces
   s1ap_interface_nas* s1ap = itf.s1ap;
   hss_interface_nas*  hss  = itf.hss;
-  gtpc_interface_nas* gtpc = itf.gtpc;
 
   // Get IMSI
   uint64_t imsi = 0;
@@ -382,7 +377,7 @@ bool nas::handle_imsi_attach_request_unknown_ue(uint32_t                        
            sizeof(LIBLTE_MME_MS_NETWORK_CAPABILITY_STRUCT));
   }
 
-  uint8_t eps_bearer_id                       = pdn_con_req.eps_bearer_id; // TODO: Unused
+  // uint8_t eps_bearer_id                       = pdn_con_req.eps_bearer_id; // TODO: Unused
   nas_ctx->m_emm_ctx.procedure_transaction_id = pdn_con_req.proc_transaction_id;
 
   // Initialize NAS count
@@ -453,7 +448,6 @@ bool nas::handle_imsi_attach_request_known_ue(nas*                              
 
   // Interfaces
   s1ap_interface_nas* s1ap = itf.s1ap;
-  hss_interface_nas*  hss  = itf.hss;
   gtpc_interface_nas* gtpc = itf.gtpc;
 
   // Delete previous GTP-U session
@@ -487,8 +481,6 @@ bool nas::handle_guti_attach_request_unknown_ue(uint32_t                        
 
   // Interfaces
   s1ap_interface_nas* s1ap = itf.s1ap;
-  hss_interface_nas*  hss  = itf.hss;
-  gtpc_interface_nas* gtpc = itf.gtpc;
 
   // Create new NAS context.
   nas_ctx = new nas(args, itf, nas_log);
@@ -517,7 +509,7 @@ bool nas::handle_guti_attach_request_unknown_ue(uint32_t                        
   nas_ctx->m_ecm_ctx.enb_ue_s1ap_id = enb_ue_s1ap_id;
   nas_ctx->m_ecm_ctx.mme_ue_s1ap_id = s1ap->get_next_mme_ue_s1ap_id();
 
-  uint8_t eps_bearer_id = pdn_con_req.eps_bearer_id;
+  // uint8_t eps_bearer_id = pdn_con_req.eps_bearer_id;
 
   // Save attach request type
   nas_ctx->m_emm_ctx.attach_type = attach_req.eps_attach_type;
@@ -650,7 +642,7 @@ bool nas::handle_guti_attach_request_known_ue(nas*                              
     sec_ctx->dl_nas_count = 0;
 
     // Create new MME UE S1AP Identity
-    uint32_t new_mme_ue_s1ap_id = s1ap->get_next_mme_ue_s1ap_id();
+    // uint32_t new_mme_ue_s1ap_id = s1ap->get_next_mme_ue_s1ap_id();
 
     // Make sure context from previous NAS connections is not present
     if (ecm_ctx->mme_ue_s1ap_id != 0) {
@@ -725,8 +717,6 @@ bool nas::handle_service_request(uint32_t                m_tmsi,
 
   // Interfaces
   s1ap_interface_nas* s1ap = itf.s1ap;
-  hss_interface_nas*  hss  = itf.hss;
-  gtpc_interface_nas* gtpc = itf.gtpc;
   mme_interface_nas*  mme  = itf.mme;
 
   LIBLTE_ERROR_ENUM err = liblte_mme_unpack_service_request_msg((LIBLTE_BYTE_MSG_STRUCT*)nas_rx, &service_req);
@@ -875,9 +865,7 @@ bool nas::handle_nb_control_plane_service_request(uint32_t                m_tmsi
 
   // Interfaces
   s1ap_interface_nas* s1ap = itf.s1ap;
-  hss_interface_nas*  hss  = itf.hss;
   gtpc_interface_nas* gtpc = itf.gtpc;
-  mme_interface_nas*  mme  = itf.mme;
 
   LIBLTE_ERROR_ENUM err = liblte_mme_unpack_nb_control_plane_service_request_msg((LIBLTE_BYTE_MSG_STRUCT*)nas_rx, &cp_service_req);
   if (err != LIBLTE_SUCCESS) {
@@ -951,13 +939,15 @@ bool nas::handle_nb_control_plane_service_request(uint32_t                m_tmsi
     printf("\nNB-IoT NAS: handle_nb_control_plane_service_request---------Plain User Data End\n");
   }
 
-  nas_log->debug("NB-IoT: handle_nb_control_plane_service_request-------------------- Send the user data through S11U\n");
-  nas_log->console("NB-IoT: handle_nb_control_plane_service_request-------------------- Send the user data through S11U\n");
-  srslte::byte_buffer_t* pdu = pool->allocate();
-  memcpy(pdu->msg, nb_esm_msg.user_data.msg, nb_esm_msg.user_data.N_bytes);
-  pdu->N_bytes = nb_esm_msg.user_data.N_bytes;
-  nas_ctx->pending_ul_pkt.push_back(pdu);
-  // TODO: the PDU will be deallocate in the mme_gtpc. Will this cause memory leakage?
+  if (nb_esm_msg.user_data.N_bytes > 0) {
+    nas_log->debug("NB-IoT: handle_nb_control_plane_service_request-------------------- Send the user data through S11U\n");
+    nas_log->console("NB-IoT: handle_nb_control_plane_service_request-------------------- Send the user data through S11U\n");
+    srslte::byte_buffer_t *pdu = pool->allocate();
+    memcpy(pdu->msg, nb_esm_msg.user_data.msg, nb_esm_msg.user_data.N_bytes);
+    pdu->N_bytes = nb_esm_msg.user_data.N_bytes;
+    nas_ctx->pending_ul_pkt.push_back(pdu);
+    // TODO: the PDU will be deallocate in the mme_gtpc. Will this cause memory leakage?
+  }
 
   mac_valid = nas_ctx->integrity_check(nas_rx);
 
@@ -1127,7 +1117,8 @@ bool nas::handle_esm_data_transport(srslte::byte_buffer_t*  nas_rx)
   m_nas_log->info("NB-IoT: -------------------- Control Plane Service request -- IMSI 0x%lx\n", m_emm_ctx.imsi);
   m_nas_log->console("NB-IoT: -------------------- Control Plane Service request -- IMSI 0x%lx\n", m_emm_ctx.imsi);
 
-  bool                                  mac_valid = false;
+  // TODO: check validity?
+  // bool                                  mac_valid = false;
   LIBLTE_MME_NB_ESM_MSG_STRUCT          esm_msg;
   srslte::byte_buffer_pool*             pool = srslte::byte_buffer_pool::get_instance();
 
@@ -1178,12 +1169,10 @@ bool nas::handle_detach_request(uint32_t                m_tmsi,
   nas_log->info("Detach Request -- eNB UE S1AP Id %d\n", enb_ue_s1ap_id);
   nas_log->console("Detach Request -- eNB UE S1AP Id %d\n", enb_ue_s1ap_id);
 
-  bool                                 mac_valid = false;
   LIBLTE_MME_DETACH_REQUEST_MSG_STRUCT detach_req;
 
   // Interfaces
   s1ap_interface_nas* s1ap = itf.s1ap;
-  hss_interface_nas*  hss  = itf.hss;
   gtpc_interface_nas* gtpc = itf.gtpc;
 
   LIBLTE_ERROR_ENUM err = liblte_mme_unpack_detach_request_msg((LIBLTE_BYTE_MSG_STRUCT*)nas_rx, &detach_req);
@@ -1243,8 +1232,6 @@ bool nas::handle_tracking_area_update_request(uint32_t                m_tmsi,
 
   // Interfaces
   s1ap_interface_nas* s1ap = itf.s1ap;
-  hss_interface_nas*  hss  = itf.hss;
-  gtpc_interface_nas* gtpc = itf.gtpc;
 
   // TODO don't search for NAS ctxt, just send that reject
   // with context we could enable integrity protection
@@ -1322,7 +1309,7 @@ bool nas::handle_attach_request(srslte::byte_buffer_t* nas_rx)
       memcpy(&m_sec_ctx.ms_network_cap, &attach_req.ms_network_cap, sizeof(LIBLTE_MME_MS_NETWORK_CAPABILITY_STRUCT));
     }
 
-    uint8_t eps_bearer_id              = pdn_con_req.eps_bearer_id; // TODO: Unused
+    // uint8_t eps_bearer_id              = pdn_con_req.eps_bearer_id; // TODO: Unused
     m_emm_ctx.procedure_transaction_id = pdn_con_req.proc_transaction_id;
 
     // Initialize NAS count
@@ -1470,7 +1457,7 @@ bool nas::handle_security_mode_complete(srslte::byte_buffer_t* nas_rx)
 bool nas::handle_attach_complete(srslte::byte_buffer_t* nas_rx)
 {
   LIBLTE_MME_ATTACH_COMPLETE_MSG_STRUCT                            attach_comp;
-  uint8_t                                                          pd, msg_type;
+  // uint8_t                                                          pd, msg_type;
   LIBLTE_MME_ACTIVATE_DEFAULT_EPS_BEARER_CONTEXT_ACCEPT_MSG_STRUCT act_bearer;
   srslte::byte_buffer_t*                                           nas_tx;
 
@@ -1497,9 +1484,9 @@ bool nas::handle_attach_complete(srslte::byte_buffer_t* nas_rx)
   }
   if (m_emm_ctx.state == EMM_STATE_DEREGISTERED) {
     // Attach requested from attach request
-    // TODO: NB-IoT: send_modify_bearer_request after receiving control plane service request
-//    m_gtpc->send_modify_bearer_request(
-//        m_emm_ctx.imsi, act_bearer.eps_bearer_id, &m_esm_ctx[act_bearer.eps_bearer_id].enb_fteid);
+    // NB-IoT: send_modify_bearer_request after receiving control plane service request
+    m_gtpc->send_modify_bearer_request(
+        m_emm_ctx.imsi, act_bearer.eps_bearer_id, &m_esm_ctx[act_bearer.eps_bearer_id].enb_fteid);
 
     // Send reply to EMM Info to UE
     nas_tx = m_pool->allocate();
@@ -1513,13 +1500,6 @@ bool nas::handle_attach_complete(srslte::byte_buffer_t* nas_rx)
     m_nas_log->console("Sending EMM Information\n");
     m_nas_log->info("Sending EMM Information\n");
   }
-
-  // TODO: NB-IoT: Perform the RRCConnectionRelease after EMM information
-  m_nas_log->info("Service Request -- Releasing previouse ECM context. eNB S1AP Id %d, MME UE S1AP Id %d\n",
-                m_ecm_ctx.enb_ue_s1ap_id,
-                  m_ecm_ctx.mme_ue_s1ap_id);
-  m_s1ap->send_ue_context_release_command(m_ecm_ctx.mme_ue_s1ap_id);
-  m_s1ap->release_ue_ecm_ctx(m_ecm_ctx.mme_ue_s1ap_id);
 
   m_emm_ctx.state = EMM_STATE_REGISTERED;
   return true;
@@ -1811,7 +1791,6 @@ bool nas::pack_security_mode_command(srslte::byte_buffer_t* nas_buffer)
   m_nas_log->info_hex(m_sec_ctx.k_nas_enc, 32, "Key NAS Encryption (k_nas_enc)\n");
   m_nas_log->info_hex(m_sec_ctx.k_nas_int, 32, "Key NAS Integrity (k_nas_int)\n");
 
-  uint8_t key_enb[32];
   srslte::security_generate_k_enb(m_sec_ctx.k_asme, m_sec_ctx.ul_nas_count, m_sec_ctx.k_enb);
   m_nas_log->info("Generating KeNB with UL NAS COUNT: %d\n", m_sec_ctx.ul_nas_count);
   m_nas_log->console("Generating KeNB with UL NAS COUNT: %d\n", m_sec_ctx.ul_nas_count);

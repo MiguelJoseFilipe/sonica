@@ -287,7 +287,7 @@ void sf_sched::set_ul_sched_result(sched_interface::ul_sched_res_t*    ul_result
 
     /* Generate DCI FormatN0 */
     //    uint32_t pending_data_before = user->get_pending_ul_new_data(get_tti_tx_ul());
-    int tbs = user->generate_formatN0(npusch, ul_alloc.needs_npdcch(), fixed_mcs);
+    int tbs = user->generate_formatN0(npusch, ul_alloc.alloc, ul_alloc.needs_npdcch(), fixed_mcs);
 
     //    ul_harq_proc* h = user->get_ul_harq(get_tti_tx_ul(), cell_index);
 
@@ -343,7 +343,11 @@ alloc_outcome_t sf_sched::alloc_dl_user(sched_ue* user, uint32_t max_data)
   // Try to allocate RBGs and DCI
   uint32_t tti_tx_dl = get_tti_tx_dl();
 
-  if (!srslte_ra_nbiot_is_valid_dl_sf(tti_tx_dl)) {
+  if (user->get_dl_alloc_acc() > 4 && user->get_pending_ul_new_data(tti_tx_dl)) {
+    return alloc_outcome_t::RB_COLLISION;
+  }
+
+  if (!carrier_sched->is_dl_subframe(tti_tx_dl)) {
     log_h->warning("SCHED: TTI %d is not valid for DL data.\n", tti_tx_dl);
     printf("SCHED: TTI %d is not valid for DL data.\n", tti_tx_dl);
     return alloc_outcome_t::RB_COLLISION;
@@ -357,28 +361,17 @@ alloc_outcome_t sf_sched::alloc_dl_user(sched_ue* user, uint32_t max_data)
 
   // Check the UE search space
   // TODO: Change the search space for different stages
-  if (tti_tx_dl % 8 >= 2){
+  if (!carrier_sched->in_dci_searchspace(tti_tx_dl)){
     log_h->warning("MAC DL Data sf_sched::alloc_dl_user TTI %d is not in the UE search space.\n", tti_tx_dl);
     printf("MAC DL data sf_sched::alloc_dl_user TTI %d is not in the UE search space.\n", tti_tx_dl);
-    return alloc_outcome_t::RB_COLLISION;
-  }
-
-
-  // Checking if it is a SIB1 TTI
-  bc_sched bc_sched_test;
-  if (bc_sched_test.is_sib1_sf(tti_tx_dl / 10, tti_tx_dl % 10)) {
-    log_h->warning("MAC DL Data sf_sched::alloc_dl_user TTI %d is occupied by SIB1.\n", tti_tx_dl);
-    printf("MAC DL Data sf_sched::alloc_dl_user TTI %d is occupied by SIB1.\n", tti_tx_dl);
     return alloc_outcome_t::RB_COLLISION;
   }
 
   // Update dl_sched table. Currently Allocate 1 sf once to a user. Future: Change the allocation scheme
   uint32_t alloc_i = 0, i_sf = 0;
 
-  // TODO: NB-IoT: if max_data > 20 bytes, allocate 3 TTI slots
-  if(max_data > 20){
-    i_sf = 2;
-  }
+  // Decide the number of i_sf according to user config
+  i_sf = user->calc_dl_i_sf(max_data * 8);
 
   uint32_t alloc_sf_num = i_sf_to_n_sf_npdsch[i_sf];
 
@@ -389,8 +382,7 @@ alloc_outcome_t sf_sched::alloc_dl_user(sched_ue* user, uint32_t max_data)
 
   while (alloc_sf_num > 0) {
     uint32_t alloc_tti = (data_tx_tti + alloc_i) % 10240;
-    if (srslte_ra_nbiot_is_valid_dl_sf(alloc_tti) && !dl_sched_table[alloc_tti] &&
-        !bc_sched_test.is_sib1_sf(alloc_tti / 10, alloc_tti % 10)) {
+    if (carrier_sched->is_dl_subframe(alloc_tti) && !dl_sched_table[alloc_tti]) {
       printf("DL_sched_table %d: allocate to user 0x%x npdsch\n", alloc_tti, user->get_rnti());
       dl_sched_table[alloc_tti] = true;
       alloc_sf_num--;
@@ -407,12 +399,36 @@ alloc_outcome_t sf_sched::alloc_dl_user(sched_ue* user, uint32_t max_data)
   //  alloc.pid       = pid;
   data_allocs.push_back(alloc);
 
+  user->add_dl_alloc_acc();
+
   Debug("MAC:NB-IoT: ----------------=================---------------Allocate an UL grant here!\n");
   printf("MAC:NB-IoT: -------------===============------------------Allocate an UL grant here!\n");
   user->ul_buffer_state(3, 70, false);
   user->ul_wait_timer(30);
 
   return alloc_outcome_t::SUCCESS;
+}
+
+static bool in_nprach_range(uint32_t tti) {
+  uint32_t rem_ce0 = tti % 160;
+  // CE0: 6.4 * 1 => 7
+  if (rem_ce0 >= 64 && rem_ce0 < 64 + 7) {
+    return true;
+  }
+
+  // CE1: 6.4 * 8 => 52
+  uint32_t rem_ce1 = tti % 640;
+  if (rem_ce1 >= 64 && rem_ce1 < 64 + 52) {
+    return true;
+  }
+
+  // CE2: 6.4 * 32 => 205
+  uint32_t rem_ce2 = tti % 2560;
+  if (rem_ce2 >= 64 && rem_ce2 < 64 + 205) {
+    return true;
+  }
+
+  return false;
 }
 
 alloc_outcome_t sf_sched::alloc_ul(sched_ue*                    user,
@@ -438,15 +454,16 @@ alloc_outcome_t sf_sched::alloc_ul(sched_ue*                    user,
     }
 
     uint32_t msg3_rx_tti = rar_tx_tti + 13;
+    uint16_t alloc_len = i_sf_to_n_sf_npdsch[alloc.i_ru];
 
     // Check MSG3 TTIs (4 continuous sub frames)
-    for(uint32_t i=0; i<alloc.len; i++){
+    for(uint32_t i=0; i<alloc_len; i++){
       if(ul_sched_table[(msg3_rx_tti + i) % 10240]){
         return alloc_outcome_t::RB_COLLISION;
       }
     }
     // Set the MSG3 TTIs as occupied
-    for(uint32_t i=0; i<alloc.len; i++) {
+    for(uint32_t i=0; i<alloc_len; i++) {
       printf("MAC sf_sched::alloc_ul: Set ul_sched_table %d true for MSG3\n", msg3_rx_tti+i);
       ul_sched_table[(msg3_rx_tti + i) % 10240] = true;
     }
@@ -456,15 +473,18 @@ alloc_outcome_t sf_sched::alloc_ul(sched_ue*                    user,
   if (needs_npdcch) {
     // UL Data allocation. Currently use mcs=12
     alloc.sc_num = 12;
-    alloc.len = 4;
+    // alloc.len = 4;
 
     // TODO: NB-IoT: Decide the MCS based on the estimated pending data now
     uint32_t pending_data = user->get_pending_ul_new_data(tti_tx_dl);
-    if(pending_data >= 125){
-      mcs = 12;
-    } else {
-      mcs = 9;
-    }
+    alloc.i_ru = user->calc_ul_i_ru(pending_data * 8, mcs);
+    uint16_t alloc_len = i_sf_to_n_sf_npdsch[alloc.i_ru];
+    // if(pending_data >= 125){
+    //   alloc.len = 6;
+    //   mcs = 10;
+    // } else {
+    //   mcs = 9;
+    // }
 
     uint32_t tti_tx_ul = get_tti_tx_ul();
 
@@ -477,7 +497,7 @@ alloc_outcome_t sf_sched::alloc_ul(sched_ue*                    user,
     }
 
     // Check if the DL grant is in the valid TTI
-    if(!srslte_ra_nbiot_is_valid_dl_sf(tti_tx_dl)){
+    if(!carrier_sched->is_dl_subframe(tti_tx_dl)){
       log_h->warning("MAC UL Data sf_sched::alloc_ul: TTI %d is not the valid TTI for DL grant.\n", tti_tx_dl);
       printf("MAC UL Data sf_sched::alloc_ul: TTI %d is not the valid TTI for DL grant.\n", tti_tx_dl);
       return alloc_outcome_t::DCI_COLLISION;
@@ -485,7 +505,7 @@ alloc_outcome_t sf_sched::alloc_ul(sched_ue*                    user,
       log_h->warning("MAC UL Data sf_sched::alloc_ul: TTI %d ahs been allocated. No space for DL grant.\n", tti_tx_dl);
       printf("MAC UL Data sf_sched::alloc_ul: TTI %d ahs been allocated. No space for DL grant.\n", tti_tx_dl);
       return alloc_outcome_t::DCI_COLLISION;
-    } else if (tti_tx_dl % 8 >= 2){
+    } else if (!carrier_sched->in_dci_searchspace(tti_tx_dl)){
       // TODO: Check if the DL grant is in the UE search space
       log_h->warning("MAC UL Data sf_sched::alloc_ul: TTI %d is not in the UE search space.\n", tti_tx_dl);
       printf("MAC UL Data sf_sched::alloc_ul: TTI %d is not in the UE search space.\n", tti_tx_dl);
@@ -493,15 +513,43 @@ alloc_outcome_t sf_sched::alloc_ul(sched_ue*                    user,
     }
 
     // Check UL DATA TTIs (4 continuous sub frames)
-    for(uint32_t i=0; i<alloc.len; i++){
+    for(uint32_t i=0; i<alloc_len; i++){
       if(ul_sched_table[tti_tx_ul % 10240]){
+        printf("MAC UL Data sf_sched::alloc_ul: TTI %d is reserved in TABLE\n", tti_tx_dl);
+        return alloc_outcome_t::RB_COLLISION;
+      }
+      if (in_nprach_range(tti_tx_ul)) {
+        printf("MAC UL Data sf_sched::alloc_ul: TTI %d coincides with NPRACH\n", tti_tx_dl);
         return alloc_outcome_t::RB_COLLISION;
       }
     }
     // Set the MSG3 TTIs as occupied
-    for(uint32_t i=0; i<alloc.len; i++) {
+    for(uint32_t i=0; i<alloc_len; i++) {
       printf("MAC sf_sched::alloc_ul: ------------------------ Set ul_sched_table %d true for UL NEWTX\n", tti_tx_ul+i);
-      ul_sched_table[tti_tx_ul % 10240] = true;
+      ul_sched_table[TTI_ADD(tti_tx_ul, i)] = true;
+    }
+
+    // HACK: (36.213 16.4.1)
+    // A UE is not expected to receive transmissions in 3 DL subframes following the
+    // end of a NPUSCH transmission by the UE
+    uint32_t dl_subframe = 0, dl_block_tti = tti_tx_ul, j = 0;
+    while (dl_subframe < 3) {
+      dl_sched_table[dl_block_tti] = true;
+      if (j >= alloc_len && carrier_sched->is_dl_subframe(dl_block_tti)) {
+        dl_subframe++;
+      }
+      dl_block_tti = TTI_ADD(dl_block_tti, 1);
+      j++;
+    }
+    // for (uint32_t i = 0; i < alloc.len + 8; i++) {
+    //   uint32_t dtti = (tti_tx_ul + i) % 10240;
+    //   dl_sched_table[dtti] = true;
+    // }
+
+    uint32_t etti = tti_tx_dl;
+    while (etti != tti_tx_ul) {
+      dl_sched_table[etti] = true;
+      etti = (etti + 1) % 10240;
     }
 
     // Also set the DL grant position in the dl_sched_table
@@ -515,6 +563,8 @@ alloc_outcome_t sf_sched::alloc_ul(sched_ue*                    user,
   ul_alloc.mcs        = mcs;
   ul_data_allocs.push_back(ul_alloc);
 
+  user->clear_dl_alloc_acc();
+
   return alloc_outcome_t::SUCCESS;
 }
 
@@ -525,7 +575,7 @@ alloc_outcome_t sf_sched::alloc_msg3(sched_ue* user, const sched_interface::dl_s
   if (rargrant.grant.i_mcs == 0){
     // currently only support mcs0
     msg3_alloc.sc_num = 12;
-    msg3_alloc.len = 4;
+    msg3_alloc.i_ru = 3;
   } else {
     log_h->warning("SCHED: Only support MCS 0 allocation for user rnti=0x%x \n", user->get_rnti());
     return alloc_outcome_t::ERROR;
@@ -533,7 +583,7 @@ alloc_outcome_t sf_sched::alloc_msg3(sched_ue* user, const sched_interface::dl_s
 
   alloc_outcome_t ret = alloc_ul(user, msg3_alloc, sf_sched::ul_alloc_t::MSG3, rargrant.grant.i_mcs);
   if (not ret) {
-    log_h->warning("SCHED: Could not allocate msg3 within (%d,%d)\n", msg3_alloc.sc_num, msg3_alloc.len);
+    log_h->warning("SCHED: Could not allocate msg3 within (%d,%d)\n", msg3_alloc.sc_num, msg3_alloc.i_ru);
   }
   return ret;
 }
@@ -561,6 +611,7 @@ void sf_sched::generate_sched_results(sf_sched_result* sf_result)
   //  set_dl_data_sched_result(dci_result, &sf_result->dl_sched_result);
   set_ul_sched_result(&sf_result->ul_sched_result);
 
+  sf_result->tti_params = tti_params;
 }
 
 } // namespace sonica_enb

@@ -114,7 +114,7 @@ void bc_sched::alloc_sibs(uint32_t hfn, sf_sched* tti_sched)
       //printf("BC SCHED Error: SIB1 TTI %d has been allocated!\n", current_tti);
       return;
     } else {
-      log_h->error("BC SCHED: SIB1 TTI %d is allocated!\n", current_tti);
+      //log_h->error("BC SCHED: SIB1 TTI %d is allocated!\n", current_tti);
     }
 
     sf_sched::bc_alloc_t bc_alloc{};
@@ -147,7 +147,7 @@ void bc_sched::alloc_sibs(uint32_t hfn, sf_sched* tti_sched)
       if (tti_sched->dl_sched_table[current_tti]) {
         log_h->error("BC SCHED Error: SIB2 TTI has been allocated!\n");
         //printf("BC SCHED Error: SIB2 TTI %d has been allocated!\n", current_tti);
-        return;
+        // return;
       }
 
       //log_h->console("MAC SIB2 %d/%d.%d\n", hfn, sfn, sf_idx);
@@ -325,6 +325,10 @@ sched::carrier_sched::carrier_sched(std::map<uint16_t, sched_ue>* ue_db_) :
         ul_sched_table()
 {
   sf_dl_mask.resize(1, 0);
+
+  for (auto& sf_sched : sf_scheds) {
+    sf_sched.set_carrier_sched(this);
+  }
 }
 
 sched::carrier_sched::~carrier_sched()
@@ -342,6 +346,43 @@ void sched::carrier_sched::carrier_cfg()
   ra_sched_ptr.reset(new ra_sched{*ue_db});
 }
 
+bool sched::carrier_sched::is_dl_subframe(uint32_t tti)
+{
+  /* TS 36.213 v14 Section 16.4
+   * A NB-IoT UE shall assume a subframe as a NB-IoT DL subframe if:
+   * - the UE determines that the subframe does not contain NPSS/NSSS/NPBCH/
+   *   NB-SIB1 transmission ...
+   */
+  bool result = srslte_ra_nbiot_is_valid_dl_sf(tti);
+
+  if (!bc_sched_ptr) {
+    return result;
+  }
+
+  return result && !bc_sched_ptr->is_sib1_sf(tti / 10, tti % 10);
+}
+
+bool sched::carrier_sched::in_dci_searchspace(uint32_t tti)
+{
+  uint32_t rem = tti % 8;
+  return (rem < 2);
+  // XXX: The following logic comes from TS 38.213 16.6 "The locations of
+  // starting subframe k ...", but it does not fully work, need to figure
+  // out why
+  //
+  // uint32_t cycle_start = tti - rem;
+  // int cnt = 0;
+  // for (int i = 0; i < rem; i++) {
+  //   if (is_dl_subframe(cycle_start + i)) {
+  //     cnt++;
+  //     if (cnt >= 2) {
+  //       return false;
+  //     }
+  //   }
+  // }
+  // return true;
+}
+
 const sf_sched_result& sched::carrier_sched::generate_tti_result(uint32_t hfn, uint32_t tti_rx, bool dl_flag)
 {
   sf_sched_result* sf_result = get_next_sf_result(tti_rx);
@@ -351,29 +392,26 @@ const sf_sched_result& sched::carrier_sched::generate_tti_result(uint32_t hfn, u
     sf_sched* tti_sched = get_sf_sched(tti_rx, dl_sched_table, ul_sched_table);
     *sf_result          = {};
 
-    if(dl_flag){
-      // Clear the sched table for the current TTI
-      dl_sched_table[tti_rx % 10240] = false;
-      /* Schedule DL control data */
-      /* Schedule Broadcast data (SIB and paging) */
-      bc_sched_ptr->dl_sched(hfn, tti_sched);
+    // Clear the sched table for the current TTI
+    dl_sched_table[tti_rx % 10240] = false;
+    /* Schedule DL control data */
+    /* Schedule Broadcast data (SIB and paging) */
+    bc_sched_ptr->dl_sched(hfn, tti_sched);
 
-      /* Schedule RAR */
-      auto ret = ra_sched_ptr->dl_sched(tti_sched);
+    /* Schedule RAR */
+    auto ret = ra_sched_ptr->dl_sched(tti_sched);
 
-      /* Schedule Msg3 */
-      if(ret==alloc_outcome_t::SUCCESS){
-        sf_sched *sf_msg3_sched = get_sf_sched(tti_rx+9, dl_sched_table, ul_sched_table); // NB-IoT MSG3_DELAY_MS = 9
-        ra_sched_ptr->ul_sched(tti_sched, sf_msg3_sched);
-      }
-
-      /* Schedule DL user data */
-      alloc_dl_users(tti_sched);
-    } else {
-      ul_sched_table[tti_rx % 10240] = false;
-      /* Schedule UL user data */
-      alloc_ul_users(tti_sched);
+    /* Schedule Msg3 */
+    if(ret==alloc_outcome_t::SUCCESS){
+      sf_sched *sf_msg3_sched = get_sf_sched(tti_rx+9, dl_sched_table, ul_sched_table); // NB-IoT MSG3_DELAY_MS = 9
+      ra_sched_ptr->ul_sched(tti_sched, sf_msg3_sched);
     }
+
+    /* Schedule DL user data */
+    alloc_dl_users(tti_sched);
+    ul_sched_table[tti_rx % 10240] = false;
+    /* Schedule UL user data */
+    alloc_ul_users(tti_sched);
 
     /* Select the winner DCI allocation combination, store all the scheduling results */
     tti_sched->generate_sched_results(sf_result);
