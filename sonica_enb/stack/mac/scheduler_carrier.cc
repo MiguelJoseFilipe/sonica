@@ -211,7 +211,6 @@ alloc_outcome_t ra_sched::dl_sched(sf_sched *tti_sched)
     // Check the UE search space
     if (tti_tx_dl % 16 >= 8){
       log_h->warning("MAC RAR ra_sched::dl_sched TTI %d is not in the UE search space.\n", tti_tx_dl);
-      printf("MAC RAR ra_sched::dl_sched TTI %d is not in the UE search space.\n", tti_tx_dl);
       return alloc_outcome_t::RB_COLLISION;
     }
 
@@ -490,7 +489,6 @@ dl_harq_proc* sched::carrier_sched::allocate_user(sched_ue* user, dl_sf_sched_it
   std::pair<uint32_t, uint32_t> req_bytes = user->get_requested_dl_bytes(cell_idx);
 
   if (req_bytes.first > 0 /* and req_bytes.second > 5 */) {
-    printf("MAC: NB-IoT ===============================Get req_bytes min data %d, max data %d\n", req_bytes.first, req_bytes.second);
     //    code = tti_sched->alloc_dl_user(user, newtx_mask, h->get_id());
     code = tti_sched->alloc_dl_user(user, req_bytes.second);
     if (code == alloc_outcome_t::SUCCESS) {

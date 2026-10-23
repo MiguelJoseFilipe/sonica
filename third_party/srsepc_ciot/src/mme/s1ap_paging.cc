@@ -19,6 +19,7 @@
  *
  */
 #include "srsepc_ciot/mme/s1ap_paging.h"
+#include <cstdlib>
 #include "srsepc_ciot/mme/mme.h"
 #include "srsepc_ciot/mme/s1ap.h"
 #include "srslte/common/bcd_helpers.h"
@@ -89,10 +90,29 @@ bool s1ap_paging::send_paging(uint64_t imsi, uint16_t erab_to_setup)
   uint16_t ue_index = imsi % 1024;
   paging.ue_id_idx_value.value.from_number(ue_index);
 
-  // UE Paging Id
-  paging.ue_paging_id.value.set_s_tmsi();
-  paging.ue_paging_id.value.s_tmsi().mmec.from_number(m_s1ap->m_s1ap_args.mme_code);
-  paging.ue_paging_id.value.s_tmsi().m_tmsi.from_number(nas_ctx->m_sec_ctx.guti.m_tmsi);
+  // UE Paging Id: S-TMSI, or IMSI when SONICA_PAGE_IMSI=1
+  const char* page_imsi = getenv("SONICA_PAGE_IMSI");
+  if (page_imsi != nullptr && page_imsi[0] == '1') {
+    // TBCD: two digits per octet, low nibble first, 0xf filler for the odd digit
+    uint8_t  digits[16] = {};
+    uint64_t v          = imsi;
+    for (int i = 14; i >= 0; i--) {
+      digits[i] = (uint8_t)(v % 10);
+      v /= 10;
+    }
+    paging.ue_paging_id.value.set_imsi();
+    paging.ue_paging_id.value.imsi().resize(8);
+    for (int i = 0; i < 8; i++) {
+      uint8_t lo = digits[2 * i];
+      uint8_t hi = (2 * i + 1 < 15) ? digits[2 * i + 1] : 0x0f;
+      paging.ue_paging_id.value.imsi()[i] = (uint8_t)((hi << 4) | lo);
+    }
+    m_s1ap_log->console("NB-IoT: paging IMSI %015" PRIu64 " by IMSI identity\n", imsi);
+  } else {
+    paging.ue_paging_id.value.set_s_tmsi();
+    paging.ue_paging_id.value.s_tmsi().mmec.from_number(m_s1ap->m_s1ap_args.mme_code);
+    paging.ue_paging_id.value.s_tmsi().m_tmsi.from_number(nas_ctx->m_sec_ctx.guti.m_tmsi);
+  }
 
   // CMDomain
   paging.cn_domain.value = asn1::s1ap::cn_domain_opts::ps;

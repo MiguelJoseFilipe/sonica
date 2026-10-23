@@ -23,6 +23,8 @@
 #include "srsepc_ciot/mme/s1ap.h"
 #include "srslte/upper/gtpu.h"
 #include "srslte/upper/ipv6.h"
+#include <cinttypes>
+#include <cstring>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -136,24 +138,36 @@ void s11u_ep::handle_s11u_pdu(srslte::byte_buffer_t* msg)
     printf("\n");
   }
 
-  uint32_t mme_ctrl_teid = header.teid;
-  printf("NB-IoT: s11u_ep::handle_s11u_pdu-------------------------TEID from header is %d\n", mme_ctrl_teid);
-
-  std::map<uint32_t, uint64_t>::iterator imsi_it = m_mme_ctr_teid_to_imsi->find(mme_ctrl_teid);
-  if (imsi_it == m_mme_ctr_teid_to_imsi->end()) {
-    printf("NB-IoT: s11u_ep::handle_s11u_pdu-------------------------Could not find IMSI from control TEID %d\n",
-           mme_ctrl_teid);
+  // The header TEID does not identify the UE: find it from the destination address of the IPv4
+  // packet (the GTP-U header has already been removed).
+  printf("NB-IoT: s11u_ep::handle_s11u_pdu-------------------------TEID from header is %d\n", header.teid);
+  nas* nas_ctx = nullptr;
+  if (msg->N_bytes >= 20 && (msg->msg[0] >> 4) == 4) {
+    uint32_t dst = 0;
+    memcpy(&dst, &msg->msg[16], 4);
+    for (const auto& kv : *m_mme_ctr_teid_to_imsi) {
+      nas* c = m_s1ap->find_nas_ctx_from_imsi(kv.second);
+      if (c != nullptr && c->m_emm_ctx.ue_ip.s_addr == dst) {
+        nas_ctx = c;
+        printf("NB-IoT: s11u_ep::handle_s11u_pdu------------------------- dst IP matches IMSI=%015" PRIu64 "\n", kv.second);
+        break;
+      }
+    }
+  }
+  if (nas_ctx == nullptr) {
+    printf("NB-IoT: s11u_ep::handle_s11u_pdu------------------------- no attached UE owns this dst IP -- dropped\n");
     return;
-  } else {
-    printf("NB-IoT: s11u_ep::handle_s11u_pdu-------------------------find IMSI=%ld from control TEID %d\n",
-           imsi_it->second,
-           mme_ctrl_teid);
+  }
+  // UE in ECM-IDLE: buffer the packet and page the UE; the buffer is sent once it is connected again
+  if (nas_ctx->m_ecm_ctx.state != ECM_STATE_CONNECTED) {
+    printf("NB-IoT: s11u_ep::handle_s11u_pdu------------------------- UE is ECM-IDLE, buffering and paging "
+           "IMSI %015" PRIu64 "\n",
+           nas_ctx->m_emm_ctx.imsi);
+    nas_ctx->pending_dl_pkt.push_back(msg);
+    m_s1ap->send_paging(nas_ctx->m_emm_ctx.imsi, 5);
+    return;
   }
 
-  nas* nas_ctx = m_s1ap->find_nas_ctx_from_imsi(imsi_it->second);
-//  printf("NB-IoT: handle_s11u_pdu------------- Receive User Pkt.\n");
-//  m_s1ap->send_downlink_nas_transport(
-//      nas_ctx->m_ecm_ctx.enb_ue_s1ap_id, nas_ctx->m_ecm_ctx.mme_ue_s1ap_id, msg, nas_ctx->m_ecm_ctx.enb_sri);
   nas_ctx->send_esm_data_transport(msg);
 }
 

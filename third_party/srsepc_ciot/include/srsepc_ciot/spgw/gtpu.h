@@ -57,8 +57,9 @@ public:
   virtual in_addr_t get_s1u_addr();
 
   virtual bool modify_gtpu_tunnel(in_addr_t ue_ipv4, srslte::gtp_fteid_t dw_user_fteid, uint32_t up_ctr_fteid, bool s11u = false);
+  bool register_ue_ip(in_addr_t ue_ipv4, uint32_t up_ctrl_teid);
   virtual bool delete_gtpu_tunnel(in_addr_t ue_ipv4);
-  virtual bool delete_gtpc_tunnel(in_addr_t ue_ipv4);
+  virtual bool delete_gtpc_tunnel(in_addr_t ue_ipv4, uint32_t owner_ctrl_teid = 0);
   virtual void send_all_queued_packets(srslte::gtp_fteid_t                 dw_user_fteid,
                                        std::queue<srslte::byte_buffer_t*>& pkt_queue,
                                        bool s11u = false);

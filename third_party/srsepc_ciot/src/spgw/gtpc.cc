@@ -364,12 +364,14 @@ bool spgw::gtpc::send_downlink_data_notification(uint32_t spgw_ctr_teid)
   spgw_tunnel_ctx_t* tunnel_ctx = tunnel_it->second;
 
   // Check if there is no Paging already pending.
-  if (tunnel_ctx->paging_pending == true) {
+  // The MME reports no paging failure: allow a new notification (re-page) after 5 s
+  if (tunnel_ctx->paging_pending == true && time(NULL) - tunnel_ctx->ddn_sent_time < 5) {
     m_gtpc_log->debug("UE Downlink Data Notification still pending.\n");
     return false;
   }
 
   tunnel_ctx->paging_pending = true;
+  tunnel_ctx->ddn_sent_time  = time(NULL);
   m_gtpc_log->console("Found UE for Downlink Notification \n");
   m_gtpc_log->console("MME Ctr TEID 0x%x, IMSI: %015" PRIu64 "\n", tunnel_ctx->dw_ctrl_fteid.teid, tunnel_ctx->imsi);
 
@@ -480,8 +482,11 @@ spgw_tunnel_ctx_t* spgw::gtpc::create_gtpc_ctx(const struct srslte::gtpc_create_
   tunnel_ctx->dw_ctrl_fteid.teid = cs_req.sender_f_teid.teid;
   tunnel_ctx->dw_ctrl_fteid.ipv4 = cs_req.sender_f_teid.ipv4;
   bzero(&tunnel_ctx->dw_user_fteid, sizeof(srslte::gtp_fteid_t));
+  tunnel_ctx->paging_pending = false;
+  tunnel_ctx->ddn_sent_time  = 0;
 
   m_teid_to_tunnel_ctx.insert(std::pair<uint32_t, spgw_tunnel_ctx_t*>(spgw_uplink_ctrl_teid, tunnel_ctx));
+  m_gtpu->register_ue_ip(ue_ip, spgw_uplink_ctrl_teid); // downlink to an idle UE triggers paging
   m_imsi_to_ctr_teid.insert(std::pair<uint64_t, uint32_t>(cs_req.imsi, spgw_uplink_ctrl_teid));
   return tunnel_ctx;
 }
@@ -496,7 +501,7 @@ bool spgw::gtpc::delete_gtpc_ctx(uint32_t ctrl_teid)
   tunnel_ctx = m_teid_to_tunnel_ctx[ctrl_teid];
 
   // Remove Ctrl TEID from GTP-U Mapping
-  m_gtpu->delete_gtpc_tunnel(tunnel_ctx->ue_ipv4);
+  m_gtpu->delete_gtpc_tunnel(tunnel_ctx->ue_ipv4, tunnel_ctx->up_ctrl_fteid.teid);
 
   // Remove Ctrl TEID from IMSI to control TEID map
   m_imsi_to_ctr_teid.erase(tunnel_ctx->imsi);

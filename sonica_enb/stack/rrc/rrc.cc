@@ -638,12 +638,170 @@ void rrc::process_release_complete(uint16_t rnti)
   }
 }
 
+
+/*******************************************************************************
+  Paging (36.304 Sec 7.2 for the occasions, 36.331 for the PCCH message)
+*******************************************************************************/
+
+// Derive T (DRX cycle in radio frames), N and Ns from SIB2's pcch-Config-NB.
+static void pcch_params(const asn1::rrc::pcch_cfg_nb_r13_s& pcch, uint32_t* T, uint32_t* N, uint32_t* Ns)
+{
+  uint32_t t = pcch.default_paging_cycle_r13.to_number(); // rf128 / rf256 / rf512 / rf1024
+  uint32_t nb;
+  switch (pcch.nb_r13.value) {
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::four_t:       nb = 4 * t; break;
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::two_t:        nb = 2 * t; break;
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::one_t:        nb = t; break;
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::half_t:       nb = t / 2; break;
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::quarter_t:    nb = t / 4; break;
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::one8th_t:     nb = t / 8; break;
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::one16th_t:    nb = t / 16; break;
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::one32nd_t:    nb = t / 32; break;
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::one64th_t:    nb = t / 64; break;
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::one128th_t:   nb = t / 128; break;
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::one256th_t:   nb = t / 256; break;
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::one512th_t:   nb = t / 512; break;
+    case asn1::rrc::pcch_cfg_nb_r13_s::nb_r13_opts::one1024th_t:  nb = t / 1024; break;
+    default:                                                      nb = t; break;
+  }
+  if (nb == 0) {
+    nb = 1;
+  }
+  *T  = t;
+  *N  = (t < nb) ? t : nb;
+  *Ns = (nb / t) > 1 ? (nb / t) : 1;
+}
+
+// 36.304 Table 7.2-1 (FDD): subframe of the paging occasion for a given Ns and i_s.
+static int po_subframe(uint32_t Ns, uint32_t i_s)
+{
+  if (Ns == 1) {
+    return 9;
+  }
+  if (Ns == 2) {
+    return (i_s == 0) ? 4 : 9;
+  }
+  static const int po4[4] = {0, 4, 5, 9};
+  return po4[i_s % 4];
+}
+
+void rrc::add_paging_id(uint32_t ueid, const asn1::s1ap::ue_paging_id_c& ue_paging_id)
+{
+  std::lock_guard<std::mutex> lock(paging_mutex);
+  asn1::rrc::paging_ue_id_c   rrc_id;
+  if (ue_paging_id.type().value == asn1::s1ap::ue_paging_id_c::types_opts::s_tmsi) {
+    rrc_id.set_s_tmsi();
+    rrc_id.s_tmsi().mmec.from_number(ue_paging_id.s_tmsi().mmec.to_number());
+    rrc_id.s_tmsi().m_tmsi.from_number(ue_paging_id.s_tmsi().m_tmsi.to_number());
+  } else {
+    // S1AP carries the IMSI TBCD-coded (two digits per octet, low nibble first, 0xf as filler),
+    // while the RRC paging identity is a sequence of one digit per element: expand it.
+    rrc_id.set_imsi();
+    const auto&          imsi = ue_paging_id.imsi();
+    std::vector<uint8_t> digits;
+    for (uint32_t i = 0; i < imsi.size(); i++) {
+      uint8_t lo = imsi[i] & 0x0f;
+      uint8_t hi = (imsi[i] >> 4) & 0x0f;
+      if (lo != 0x0f) {
+        digits.push_back(lo);
+      }
+      if (hi != 0x0f) {
+        digits.push_back(hi);
+      }
+    }
+    rrc_id.imsi().resize(digits.size());
+    for (uint32_t i = 0; i < digits.size(); i++) {
+      rrc_id.imsi()[i] = digits[i];
+    }
+  }
+  pending_paging[ueid % 1024] = pending_page_t{rrc_id, PAGING_TX_PER_REQUEST};
+  rrc_log->console("RRC: NB-IoT: paging queued for UE_ID=%d (pending=%zd)\n", ueid % 1024, pending_paging.size());
+}
+
+bool rrc::is_paging_opportunity(uint32_t tti, uint32_t* payload_len)
+{
+  std::lock_guard<std::mutex> lock(paging_mutex);
+  if (pending_paging.empty()) {
+    return false;
+  }
+
+  const uint32_t sfn = (tti / 10) % 1024;
+  const uint32_t sf  = tti % 10;
+
+  uint32_t T, N, Ns;
+  pcch_params(cfg.sib2.rr_cfg_common_r13.pcch_cfg_r13, &T, &N, &Ns);
+
+  for (auto it = pending_paging.begin(); it != pending_paging.end(); ++it) {
+    const uint32_t ue_id = it->first;
+    // Paging Frame: SFN mod T = (T div N) * (UE_ID mod N)
+    if ((sfn % T) != ((T / N) * (ue_id % N))) {
+      continue;
+    }
+    // Paging Occasion: i_s = floor(UE_ID/N) mod Ns -> subframe from Table 7.2-1; for NB-IoT the PO is the
+    // first valid DL subframe from there.
+    const uint32_t i_s = (ue_id / N) % Ns;
+    const int      po  = po_subframe(Ns, i_s);
+    if ((int)sf < po || !srslte_ra_nbiot_is_valid_dl_sf(tti)) {
+      continue;
+    }
+    bool earlier_valid = false;
+    for (int k = po; k < (int)sf; k++) {
+      if (srslte_ra_nbiot_is_valid_dl_sf(tti - sf + k)) {
+        earlier_valid = true;
+        break;
+      }
+    }
+    if (earlier_valid) {
+      continue;
+    }
+
+    // Build the PCCH Paging message for this UE
+    asn1::rrc::pcch_msg_nb_s pcch_msg;
+    auto&                    pg = pcch_msg.msg.set_c1().paging_r13();
+    pg.paging_record_list_r13_present = true;
+    pg.paging_record_list_r13.resize(1);
+    pg.paging_record_list_r13[0].ue_id_r13 = it->second.id;
+
+    asn1::bit_ref bref(pcch_payload, sizeof(pcch_payload));
+    if (pcch_msg.pack(bref) != asn1::SRSASN_SUCCESS) {
+      rrc_log->error("Failed to pack PCCH paging message\n");
+      return false;
+    }
+    pcch_payload_len = bref.distance_bytes();
+    *payload_len     = pcch_payload_len;
+    rrc_log->console("RRC: NB-IoT: paging UE_ID=%d at sfn=%d sf=%d (T=%d N=%d Ns=%d, %d bytes, tx %d/%d)\n",
+                     ue_id, sfn, sf, T, N, Ns, pcch_payload_len,
+                     PAGING_TX_PER_REQUEST - it->second.tx_left + 1, PAGING_TX_PER_REQUEST);
+    if (--it->second.tx_left == 0) {
+      pending_paging.erase(it);
+    }
+    return true;
+  }
+  return false;
+}
+
+uint8_t* rrc::read_pdu_pcch(uint32_t buffer_size)
+{
+  return (pcch_payload_len > 0 && buffer_size >= pcch_payload_len) ? pcch_payload : nullptr;
+}
+
 void rrc::rem_user(uint16_t rnti)
 {
   auto user_it = users.find(rnti);
   if (user_it != users.end()) {
     rrc_log->console("RRC:NB-IOT: Disconnecting rnti=0x%x.\n", rnti);
     rrc_log->info("Disconnecting rnti=0x%x.\n", rnti);
+
+    /* Release the UE before removing it, so it returns to idle and monitors paging again */
+    if (!user_it->second->is_idle() && !user_it->second->release_sent) {
+      rlc->clear_buffer(rnti);
+      user_it->second->send_connection_release();
+      usleep(50000); // no RRCReleaseComplete: leave time for the transmission
+    }
+
+    /* UE Context Release Request to the MME, so that it moves the UE to ECM-IDLE and pages it for
+     * downlink data. No-op when the MME started the release. */
+    s1ap->user_release(rnti, asn1::s1ap::cause_radio_network_opts::user_inactivity);
 
     /* First remove MAC and GTPU to stop processing DL/UL traffic for this user */
     mac->ue_rem(rnti); // MAC handles PHY
@@ -665,6 +823,8 @@ void rrc::rem_user(uint16_t rnti)
 void rrc::generate_sibs()
 {
   asn1::dyn_array<bcch_dl_sch_msg_nb_s> msgs(2);
+  // hyperSFN-MSB-r13 must have 8 bits for SIB1 to encode; resize() also zeroes it
+  cfg.sib1.hyper_sfn_msb_r13.resize(8);
   msgs[0].msg.set_c1().set_sib_type1_r13() = cfg.sib1;
 
   msgs[1].msg.set_c1().set_sys_info_r13().crit_exts.set_sys_info_r13();
@@ -1009,6 +1169,7 @@ void rrc::ue::send_connection_release()
 {
   parent->rrc_log->debug("RRC: NB-IoT: -----------------------Send RRC Connection Release\n");
   printf("RRC: NB-IoT: -----------------------Send RRC Connection Release\n");
+  release_sent = true;
   dl_dcch_msg_nb_s dl_dcch_msg;
   dl_dcch_msg.msg.set_c1().set_rrc_conn_release_r13();
   dl_dcch_msg.msg.c1().rrc_conn_release_r13().rrc_transaction_id = (uint8_t)((transaction_id++) % 4);

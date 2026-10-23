@@ -349,7 +349,6 @@ alloc_outcome_t sf_sched::alloc_dl_user(sched_ue* user, uint32_t max_data)
 
   if (!carrier_sched->is_dl_subframe(tti_tx_dl)) {
     log_h->warning("SCHED: TTI %d is not valid for DL data.\n", tti_tx_dl);
-    printf("SCHED: TTI %d is not valid for DL data.\n", tti_tx_dl);
     return alloc_outcome_t::RB_COLLISION;
   }
 
@@ -363,7 +362,6 @@ alloc_outcome_t sf_sched::alloc_dl_user(sched_ue* user, uint32_t max_data)
   // TODO: Change the search space for different stages
   if (!carrier_sched->in_dci_searchspace(tti_tx_dl)){
     log_h->warning("MAC DL Data sf_sched::alloc_dl_user TTI %d is not in the UE search space.\n", tti_tx_dl);
-    printf("MAC DL data sf_sched::alloc_dl_user TTI %d is not in the UE search space.\n", tti_tx_dl);
     return alloc_outcome_t::RB_COLLISION;
   }
 
@@ -488,10 +486,8 @@ alloc_outcome_t sf_sched::alloc_ul(sched_ue*                    user,
 
     uint32_t tti_tx_ul = get_tti_tx_ul();
 
-    printf("MAC UL Data sf_sched::alloc_ul tti_tx_ul=%d, tti_tx_dl=%d.\n", tti_tx_ul, tti_tx_dl);
     if (user->msg_wait_timer != 0){
-      log_h->warning("MAC UL Data sf_sched::alloc_ul: The wait timer is not finished at TTI %d.\n", tti_tx_dl);
-      printf("MAC UL Data sf_sched::alloc_ul: The wait timer is not finished at TTI %d.\n", tti_tx_dl);
+      log_h->debug("MAC UL Data sf_sched::alloc_ul: The wait timer is not finished at TTI %d.\n", tti_tx_dl);
       user->msg_wait_timer--;
       return alloc_outcome_t::DCI_COLLISION;
     }
@@ -508,7 +504,6 @@ alloc_outcome_t sf_sched::alloc_ul(sched_ue*                    user,
     } else if (!carrier_sched->in_dci_searchspace(tti_tx_dl)){
       // TODO: Check if the DL grant is in the UE search space
       log_h->warning("MAC UL Data sf_sched::alloc_ul: TTI %d is not in the UE search space.\n", tti_tx_dl);
-      printf("MAC UL Data sf_sched::alloc_ul: TTI %d is not in the UE search space.\n", tti_tx_dl);
       return alloc_outcome_t::DCI_COLLISION;
     }
 
@@ -564,7 +559,7 @@ alloc_outcome_t sf_sched::alloc_ul(sched_ue*                    user,
   ul_data_allocs.push_back(ul_alloc);
 
   user->clear_dl_alloc_acc();
-
+  user->unset_sr(); // set in sched_ue::dl_buffer_state
   return alloc_outcome_t::SUCCESS;
 }
 

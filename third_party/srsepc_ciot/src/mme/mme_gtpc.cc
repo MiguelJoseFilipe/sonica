@@ -395,8 +395,13 @@ bool mme_gtpc::send_modify_bearer_request(uint64_t imsi, uint16_t erab_to_modify
     mb_req->eps_bearer_context_to_modify.s1_u_enb_f_teid.ipv4 = enb_fteid->ipv4;
     mb_req->eps_bearer_context_to_modify.s1_u_enb_f_teid.teid = enb_fteid->teid;
   } else {
-    mb_req->eps_bearer_context_to_modify.s11_u_mme_f_teid.ipv4 = enb_fteid->ipv4;
-    mb_req->eps_bearer_context_to_modify.s11_u_mme_f_teid.teid = enb_fteid->teid;
+    // Control plane CIoT: downlink data goes to the MME S11-U endpoint
+    uint32_t s11u_teid = 0;
+    if (!get_s11u_teid(imsi, &s11u_teid)) {
+      s11u_teid = sgw_ctr_fteid.teid;
+    }
+    mb_req->eps_bearer_context_to_modify.s11_u_mme_f_teid.ipv4 = m_mme_gtpc_ip;
+    mb_req->eps_bearer_context_to_modify.s11_u_mme_f_teid.teid = s11u_teid;
   }
 
   m_mme_gtpc_log->info("GTP-C Modify bearer request -- S-GW Control TEID %d\n", sgw_ctr_fteid.teid);
@@ -448,6 +453,14 @@ void mme_gtpc::handle_modify_bearer_response(srslte::gtpc_pdu* mb_resp_pdu)
   m_s1ap->send_downlink_nas_transport(
       nas_ctx->m_ecm_ctx.enb_ue_s1ap_id, nas_ctx->m_ecm_ctx.mme_ue_s1ap_id, nas_tx, nas_ctx->m_ecm_ctx.enb_sri);
   pool->deallocate(nas_tx);
+
+  // Send the downlink packets buffered while the UE was idle
+  while (nas_ctx->pending_dl_pkt.size() > 0) {
+    srslte::byte_buffer_t* dl = nas_ctx->pending_dl_pkt[0];
+    m_mme_gtpc_log->console("NB-IoT: paged UE is back -- delivering buffered DL packet (%d B)\n", dl->N_bytes);
+    nas_ctx->send_esm_data_transport(dl);
+    nas_ctx->pending_dl_pkt.pop_front();
+  }
 
   m_mme_gtpc_log->debug("NB-IoT: handle_modify_bearer_response------------- Checking the User Pending Pkt\n");
   m_mme_gtpc_log->console("NB-IoT: handle_modify_bearer_response------------- Checking the User Pending Pkt\n");

@@ -621,7 +621,7 @@ bool nas::handle_guti_attach_request_known_ue(nas*                              
       hss->gen_update_loc_answer(emm_ctx->imsi, &nas_ctx->m_esm_ctx[default_bearer].qci);
       nas_log->debug("Getting subscription information -- QCI %d\n", nas_ctx->m_esm_ctx[default_bearer].qci);
       nas_log->console("Getting subscription information -- QCI %d\n", nas_ctx->m_esm_ctx[default_bearer].qci);
-      gtpc->send_create_session_request(emm_ctx->imsi);
+      gtpc->send_create_session_request(emm_ctx->imsi, true); // control plane CIoT: S11-U tunnel
     }
     sec_ctx->ul_nas_count++;
     pool->deallocate(nas_tx);
@@ -1448,7 +1448,8 @@ bool nas::handle_security_mode_complete(srslte::byte_buffer_t* nas_rx)
     m_hss->gen_update_loc_answer(m_emm_ctx.imsi, &m_esm_ctx[default_bearer].qci);
     m_nas_log->debug("Getting subscription information -- QCI %d\n", m_esm_ctx[default_bearer].qci);
     m_nas_log->console("Getting subscription information -- QCI %d\n", m_esm_ctx[default_bearer].qci);
-    m_gtpc->send_create_session_request(m_emm_ctx.imsi);
+    // NB-IoT UEs use control plane CIoT optimization: the session needs an S11-U tunnel
+    m_gtpc->send_create_session_request(m_emm_ctx.imsi, true);
   }
   m_pool->deallocate(nas_tx);
   return true;

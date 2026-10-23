@@ -23,6 +23,29 @@
 #include "sonica_enb/hdr/phy/nprach_worker.h"
 #include "srslte/srslte.h"
 
+#include <cstdlib>
+#include <sstream>
+#include <string>
+#include <vector>
+
+// Timing advance sent in the RAR. The NPRACH detector gives no timing estimate, so the value is fixed
+// (5) or, for calibration, taken in turn from $SONICA_TA_LIST (e.g. "0,8,16"), one per preamble.
+static uint32_t sonica_next_ta()
+{
+  static std::vector<uint32_t> list;
+  static size_t k = 0;
+  if (list.empty()) {
+    const char* e = getenv("SONICA_TA_LIST");
+    std::stringstream ss(e ? e : "5");
+    std::string item;
+    while (std::getline(ss, item, ',')) {
+      if (!item.empty()) list.push_back((uint32_t)std::stoul(item));
+    }
+    if (list.empty()) list.push_back(5);
+  }
+  return list[k++ % list.size()];
+}
+
 namespace sonica_enb {
 
 int nprach_worker::init(const srslte_nbiot_cell_t&      cell_,
@@ -116,7 +139,10 @@ int nprach_worker::run_tti(sf_buffer* b)
 
   if (!emulate_nprach) {
     if (ret) {
-      stack->rach_detected(b->tti, index, 5);
+      uint32_t ta = sonica_next_ta();
+      printf("NPRACH-TA: tti=%u preamble=%u using TA=%u\n", b->tti, index, ta);
+      fflush(stdout);
+      stack->rach_detected(b->tti, index, ta);
     }
   } else {
     if (b->tti == 384) {

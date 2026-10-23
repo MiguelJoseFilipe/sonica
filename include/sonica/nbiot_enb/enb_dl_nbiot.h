@@ -74,6 +74,10 @@ SONICA_API int sonica_enb_dl_nbiot_put_npdcch_ul(sonica_enb_dl_nbiot_t*    q,
                                                  uint16_t                  rnti,
                                                  uint32_t                  sf_idx);
 
+SONICA_API int sonica_enb_dl_nbiot_put_npdcch_paging(sonica_enb_dl_nbiot_t*    q,
+                                                    srslte_ra_nbiot_dl_dci_t* dci_dl,
+                                                    uint32_t                  sf_idx);
+
 SONICA_API int sonica_enb_dl_nbiot_put_npdsch(sonica_enb_dl_nbiot_t* q,
                                               srslte_npdsch_cfg_t*   cfg,
                                               uint8_t*               data,

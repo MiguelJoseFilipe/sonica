@@ -28,6 +28,7 @@
 #ifndef SRSEPC_SPGW_H
 #define SRSEPC_SPGW_H
 
+#include <ctime>
 #include "srslte/asn1/gtpc.h"
 #include "srslte/common/buffer_pool.h"
 #include "srslte/common/log_filter.h"
@@ -60,6 +61,7 @@ typedef struct spgw_tunnel_ctx {
   srslte::gtp_fteid_t                dw_ctrl_fteid;
   srslte::gtp_fteid_t                dw_user_fteid;
   bool                               paging_pending;
+  time_t                             ddn_sent_time; // for re-paging when the UE does not answer
   std::queue<srslte::byte_buffer_t*> paging_queue;
 } spgw_tunnel_ctx_t;
 
