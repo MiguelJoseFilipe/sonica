@@ -678,7 +678,8 @@ bool s1ap::handle_paging(const asn1::s1ap::paging_s& msg)
     s1ap_log->warning("Not handling S1AP message extension\n");
   }
   uint32_t ueid = msg.protocol_ies.ue_id_idx_value.value.to_number();
-//  TODO: rrc->add_paging_id(ueid, msg.protocol_ies.ue_paging_id.value);
+  s1ap_log->console("S1AP: NB-IoT: Paging received for UE Identity Index %d\n", ueid);
+  rrc->add_paging_id(ueid, msg.protocol_ies.ue_paging_id.value);
   return true;
 }
 

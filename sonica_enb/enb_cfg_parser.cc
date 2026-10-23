@@ -580,7 +580,8 @@ int parse_sibs(all_args_t* args_, rrc_cfg_t* rrc_cfg_, phy_cfg_t* phy_config_com
       plmn_id_info_nb_r13_s::cell_reserved_for_oper_r13_e_::not_reserved;
 
   // Will be updated in MAC, just set to 0 here
-  sib1->hyper_sfn_msb_r13.from_number(0);
+  // not from_number(0): it sizes the bitstring from log2(0) and the SIB1 encode fails
+  sib1->hyper_sfn_msb_r13.resize(8);
 
   // Generate SIB2
   if (sib_sections::parse_sib2(args_->enb_files.sib_config, sib2) != SRSLTE_SUCCESS) {

@@ -278,6 +278,30 @@ int sonica_enb_dl_nbiot_put_npdcch_ul(sonica_enb_dl_nbiot_t*    q,
   return SRSLTE_SUCCESS;
 }
 
+/* NPDCCH carrying a paging grant: DCI format N2 with P-RNTI (36.212 6.4.3.3, 36.213 16.6) */
+int sonica_enb_dl_nbiot_put_npdcch_paging(sonica_enb_dl_nbiot_t*    q,
+                                          srslte_ra_nbiot_dl_dci_t* dci_dl,
+                                          uint32_t                  sf_idx)
+{
+  srslte_dci_location_t location = { .L = 2, .ncce = 0 };
+  srslte_dci_msg_t      dci_msg;
+  ZERO_OBJECT(dci_msg);
+
+  dci_dl->dci_is_n2 = true;
+  dci_dl->format    = 1; // 1 = paging (0 would be a direct indication)
+
+  if (srslte_dci_msg_pack_npdsch(dci_dl, SRSLTE_DCI_FORMATN2, &dci_msg, false)) {
+    ERROR("Error packing paging DCI (format N2)\n");
+    return SRSLTE_ERROR;
+  }
+  if (srslte_npdcch_encode(&q->npdcch, &dci_msg, location, SRSLTE_PRNTI, q->sf_symbols, sf_idx)) {
+    ERROR("Error encoding paging DCI message\n");
+    return SRSLTE_ERROR;
+  }
+
+  return SRSLTE_SUCCESS;
+}
+
 int sonica_enb_dl_nbiot_put_npdsch(sonica_enb_dl_nbiot_t* q,
                                    srslte_npdsch_cfg_t*   cfg,
                                    uint8_t*               data,

@@ -55,6 +55,9 @@ public:
 
   // rrc_interface_mac
   uint8_t* read_pdu_bcch_dlsch(const uint32_t sib_index) override;
+  bool     is_paging_opportunity(uint32_t tti, uint32_t* payload_len) override;
+  uint8_t* read_pdu_pcch(uint32_t buffer_size) override;
+  void     add_paging_id(uint32_t ueid, const asn1::s1ap::ue_paging_id_c& ue_paging_id);
   void     add_user(uint16_t rnti, const sched_interface::ue_cfg_t& init_ue_cfg) override;
   void     upd_user(uint16_t new_rnti, uint16_t old_rnti) override;
 
@@ -86,6 +89,7 @@ private:
     ~ue();
     bool is_connected();
     bool is_idle();
+    bool release_sent = false; ///< an RRC Connection Release has already been sent to this UE
 
     typedef enum {
       MSG3_RX_TIMEOUT = 0,    ///< Msg3 has its own timeout to quickly remove fake UEs from random PRACHs
@@ -179,6 +183,18 @@ private:
   // srslte::block_queue<rrc_pdu> rx_pdu_queue;
 
   rrc_cfg_t cfg = {};
+
+  // Paging: UE_ID (IMSI mod 1024, the S1AP UE Identity Index) -> paging record identity.
+  // Each page is sent in PAGING_TX_PER_REQUEST consecutive paging occasions of the UE.
+  struct pending_page_t {
+    asn1::rrc::paging_ue_id_c id;
+    uint32_t                  tx_left;
+  };
+  static const uint32_t                     PAGING_TX_PER_REQUEST = 4;
+  std::map<uint32_t, pending_page_t>        pending_paging;
+  std::mutex                                    paging_mutex;
+  uint8_t                                       pcch_payload[128] = {};
+  uint32_t                                      pcch_payload_len  = 0;
 
   srslte::unique_byte_buffer_t sib_buffer1;
   srslte::unique_byte_buffer_t sib_buffer2;

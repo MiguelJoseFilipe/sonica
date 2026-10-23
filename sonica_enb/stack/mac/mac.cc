@@ -32,8 +32,26 @@
 #include "srslte/common/rwlock_guard.h"
 #include "srslte/common/time_prof.h"
 
+#include <chrono>
+#include <map>
+#include <mutex>
+
 //#define WRITE_SIB_PCAP
 using namespace asn1::rrc;
+
+// Uplink activity per user. A user is removed after UE_MAX_CONSEC_UL_FAIL consecutive UL CRC
+// failures, or after UE_UL_INACTIVITY_S without a successful UL (e.g. an interrupted random access).
+namespace {
+struct ue_activity_t {
+  std::chrono::steady_clock::time_point last_ok       = std::chrono::steady_clock::now();
+  uint32_t                              consec_fail   = 0;
+  bool                                  rem_requested = false;
+};
+std::mutex                         g_ue_act_mtx;
+std::map<uint16_t, ue_activity_t>  g_ue_act;
+constexpr uint32_t                 UE_MAX_CONSEC_UL_FAIL = 4;
+constexpr int                      UE_UL_INACTIVITY_S    = 20;
+} // namespace
 
 namespace sonica_enb {
 
@@ -214,6 +232,10 @@ int mac::ue_cfg(uint16_t rnti, sched_interface::ue_cfg_t* cfg)
 // Removes UE from DB
 int mac::ue_rem(uint16_t rnti)
 {
+  {
+    std::lock_guard<std::mutex> g(g_ue_act_mtx);
+    g_ue_act.erase(rnti);
+  }
   int ret = -1;
   {
     srslte::rwlock_read_guard lock(rwlock);
@@ -280,6 +302,19 @@ int mac::crc_info(uint32_t tti_rx, uint16_t rnti, uint32_t nof_bytes, bool crc)
     //    }
     //    uint32_t ue_cc_idx = enb_ue_cc_map[enb_cc_idx];
     //    uint32_t ue_cc_idx = 0;
+
+    {
+      std::lock_guard<std::mutex> g(g_ue_act_mtx);
+      ue_activity_t&              a = g_ue_act[rnti];
+      if (crc) {
+        a.last_ok     = std::chrono::steady_clock::now();
+        a.consec_fail = 0;
+      } else if (++a.consec_fail >= UE_MAX_CONSEC_UL_FAIL && !a.rem_requested) {
+        a.rem_requested = true;
+        printf("MAC: rnti=0x%x removed after %u consecutive UL CRC failures\n", rnti, a.consec_fail);
+        rrc_h->rem_user_thread(rnti);
+      }
+    }
 
     // push the pdu through the queue if received correctly
     if (crc) {
@@ -355,6 +390,10 @@ void mac::rach_detected(uint32_t tti, uint32_t preamble_idx, uint32_t time_adv)
 
     // Register new user in RRC
     rrc_h->add_user(rnti, ue_cfg);
+    {
+      std::lock_guard<std::mutex> g(g_ue_act_mtx);
+      g_ue_act[rnti] = ue_activity_t{};
+    }
 
 //    // Add temporal rnti to the PHY
 //    if (phy_h->add_rnti(rnti, enb_cc_idx, true) != SRSLTE_SUCCESS) {
@@ -372,6 +411,21 @@ void mac::rach_detected(uint32_t tti, uint32_t preamble_idx, uint32_t time_adv)
 
 int mac::get_dl_sched(uint32_t hfn, uint32_t tti_tx_dl, dl_sched_list_t &dl_sched_res_list)
 {
+  {
+    static uint32_t sweep_cnt = 0;
+    if (++sweep_cnt % 1000 == 0) {
+      std::lock_guard<std::mutex> g(g_ue_act_mtx);
+      const auto                  now = std::chrono::steady_clock::now();
+      for (auto& kv : g_ue_act) {
+        const auto idle_s = std::chrono::duration_cast<std::chrono::seconds>(now - kv.second.last_ok).count();
+        if (!kv.second.rem_requested && idle_s >= UE_UL_INACTIVITY_S) {
+          kv.second.rem_requested = true;
+          printf("MAC: rnti=0x%x removed after %lds without a successful UL\n", kv.first, (long)idle_s);
+          rrc_h->rem_user_thread(kv.first);
+        }
+      }
+    }
+  }
   if (!started) {
     return 0;
   }
@@ -478,6 +532,32 @@ int mac::get_dl_sched(uint32_t hfn, uint32_t tti_tx_dl, dl_sched_list_t &dl_sche
     }
 
     n++;
+  }
+
+  // Paging (36.304 Sec 7.2): in a free paging occasion, NPDCCH (DCI N2, P-RNTI) + NPDSCH carrying PCCH
+  if (n == 0) {
+    uint32_t pcch_len = 0;
+    if (rrc_h->is_paging_opportunity(tti_tx_dl, &pcch_len) && pcch_len > 0) {
+      uint8_t* pcch_pdu = rrc_h->read_pdu_pcch(pcch_len);
+      if (pcch_pdu != nullptr) {
+        srslte_ra_nbiot_dl_dci_t* dci = &dl_sched_res->npdsch.dci;
+        bzero(dci, sizeof(srslte_ra_nbiot_dl_dci_t));
+        dci->alloc.rnti           = SRSLTE_PRNTI;
+        dci->alloc.has_sib1       = false;
+        dci->alloc.i_delay        = 0;
+        dci->alloc.i_sf           = 1;  // 2 subframes
+        dci->alloc.i_rep          = 0;  // no repetitions
+        dci->alloc.dci_sf_rep_num = 0;
+        dci->mcs_idx              = 3;  // tbs_table_nbiot[3][1] = 104 bits, enough for a 1-record PCCH
+        dci->format               = 1;  // paging (not direct indication)
+        dci->dci_is_n2            = true;
+        dl_sched_res->npdsch.has_npdcch = true;
+        dl_sched_res->npdsch.is_new_sib = false;
+        dl_sched_res->npdsch.data[0]    = pcch_pdu;
+        printf("MAC: paging grant at TTI %d (%d bytes on PCCH)\n", tti_tx_dl, pcch_len);
+        n++;
+      }
+    }
   }
 
   dl_sched_res->nof_grants = n;

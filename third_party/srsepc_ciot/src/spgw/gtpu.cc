@@ -446,10 +446,19 @@ bool spgw::gtpu::modify_gtpu_tunnel(in_addr_t ue_ipv4, srslte::gtpc_f_teid_ie dw
   return true;
 }
 
+/* Map the UE IP to its control TEID at session creation, so downlink data for a UE without a user
+ * tunnel (idle) triggers a Downlink Data Notification and paging (TS 23.401 5.3.4.3). */
+bool spgw::gtpu::register_ue_ip(in_addr_t ue_ipv4, uint32_t up_ctrl_teid)
+{
+  m_ip_to_ctr_teid[ue_ipv4] = up_ctrl_teid;
+  m_gtpu_log->info("Registered UE IP %s -> control TEID 0x%x\n", srslte::gtpu_ntoa(ue_ipv4).c_str(), up_ctrl_teid);
+  return true;
+}
+
 bool spgw::gtpu::delete_gtpu_tunnel(in_addr_t ue_ipv4)
 {
   // Remove GTP-U connections, if any.
-  if (m_ip_to_usr_teid.count(ue_ipv4)) {
+  if (m_ip_to_usr_teid.count(ue_ipv4) || m_ip_to_s11u_teid.count(ue_ipv4)) {
     m_ip_to_usr_teid.erase(ue_ipv4);
     m_ip_to_s11u_teid.erase(ue_ipv4);
   } else {
@@ -459,8 +468,14 @@ bool spgw::gtpu::delete_gtpu_tunnel(in_addr_t ue_ipv4)
   return true;
 }
 
-bool spgw::gtpu::delete_gtpc_tunnel(in_addr_t ue_ipv4)
+bool spgw::gtpu::delete_gtpc_tunnel(in_addr_t ue_ipv4, uint32_t owner_ctrl_teid)
 {
+  // A UE that re-attaches keeps its IP: keep the mapping if it now belongs to the new session
+  if (owner_ctrl_teid != 0 && m_ip_to_ctr_teid.count(ue_ipv4) && m_ip_to_ctr_teid[ue_ipv4] != owner_ctrl_teid) {
+    m_gtpu_log->info("Keeping UE IP %s: now owned by control TEID 0x%x, not the deleted 0x%x\n",
+                     srslte::gtpu_ntoa(ue_ipv4).c_str(), m_ip_to_ctr_teid[ue_ipv4], owner_ctrl_teid);
+    return true;
+  }
   // Remove Ctrl TEID from IP mapping.
   if (m_ip_to_ctr_teid.count(ue_ipv4)) {
     m_ip_to_ctr_teid.erase(ue_ipv4);

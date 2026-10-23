@@ -291,6 +291,8 @@ public:
   sec_ctx_t m_sec_ctx                   = {};
 
   std::deque<srslte::byte_buffer_t*> pending_ul_pkt = {};
+  // Downlink packets buffered while the UE is ECM-IDLE, sent once paging brings it back (36.413 Paging)
+  std::deque<srslte::byte_buffer_t*> pending_dl_pkt = {};
 
 private:
   srslte::byte_buffer_pool* m_pool    = nullptr;

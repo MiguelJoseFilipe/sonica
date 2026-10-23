@@ -326,8 +326,14 @@ public:
   // virtual void rl_failure(uint16_t rnti)                                             = 0;
    virtual void add_user(uint16_t rnti, const sched_interface::ue_cfg_t& init_ue_cfg) = 0;
    virtual void upd_user(uint16_t new_rnti, uint16_t old_rnti)                        = 0;
+  /* Queue removal of a user (RRC tears down MAC, RLC and PDCP), used by MAC to drop users whose
+     uplink has failed. */
+  virtual void rem_user_thread(uint16_t rnti) {}
   // virtual void set_activity_user(uint16_t rnti)                                      = 0;
-  // virtual bool is_paging_opportunity(uint32_t tti, uint32_t* payload_len)            = 0;
+  /* Paging (36.304 Sec 7.2): whether this TTI is a paging occasion with a pending page, and the
+     PCCH PDU to send in it. */
+  virtual bool     is_paging_opportunity(uint32_t tti, uint32_t* payload_len) { return false; }
+  virtual uint8_t* read_pdu_pcch(uint32_t buffer_size) { return nullptr; }
 
   ///< Provide packed SIB to MAC (buffer is managed by RRC)
   virtual uint8_t* read_pdu_bcch_dlsch(const uint32_t sib_index) = 0;
@@ -350,7 +356,7 @@ public:
   virtual bool modify_ue_ctxt(uint16_t rnti, const asn1::s1ap::ue_context_mod_request_s& msg)    = 0;
   virtual bool setup_ue_erabs(uint16_t rnti, const asn1::s1ap::erab_setup_request_s& msg)        = 0;
   virtual bool release_erabs(uint32_t rnti)                                                      = 0;
-//  virtual void add_paging_id(uint32_t ueid, const asn1::s1ap::ue_paging_id_c& ue_paging_id)      = 0;
+  virtual void add_paging_id(uint32_t ueid, const asn1::s1ap::ue_paging_id_c& ue_paging_id)        = 0;
 
   /**
    * Reports the reception of S1 HandoverCommand / HandoverPreparationFailure or abnormal conditions during

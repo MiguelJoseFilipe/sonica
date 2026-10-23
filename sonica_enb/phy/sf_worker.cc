@@ -54,25 +54,6 @@ using namespace asn1::rrc;
 
 namespace sonica_enb {
 
-static uint8_t dummy_data[11] = {0x00, 0x39, 0x2A, 0x53, 0x40, 0x14, 0x7B, 0x1C, 0x40, 0x00, 0x00};
-
-static uint8_t dummy_data2[125] = {
-  0x3d, 0x23, 0x53, 0x1f, 0x00, 0xa0, 0x00, 0x10, 0x00, 0x26, 0x83, 0xa0, 0xb9, 0x04, 0x4c, 0x88,
-  0x03, 0x80, 0x00, 0x20, 0x38, 0x02, 0x03, 0xf8, 0x38, 0x00, 0x00, 0x00, 0x42, 0x00, 0x00, 0x15,
-  0x01, 0x00, 0xe8, 0x08, 0xe8, 0x93, 0x91, 0xc0, 0x40, 0x10, 0x88, 0x00, 0x80, 0x00, 0x08, 0x40,
-  0x83, 0x00, 0x00, 0x00, 0x00, 0x41, 0x83, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x80, 0x00, 0x05,
-  0x00, 0x00, 0x02, 0x80, 0x00, 0x08, 0x00, 0x00, 0x08, 0x80, 0x18, 0x81, 0xf2, 0xf0, 0x1a, 0x48,
-  0x08, 0x81, 0xab, 0xac, 0x53, 0x7a, 0xe0, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-
-static uint8_t dummy_data_bsr[11] = {0x3B, 0x3D, 0x03, 0x10, 0x5F, 0x09, 0x88, 0x01, 0x30, 0x0B, 0x00};
-
-static uint8_t dummy_data_bsr2[15] = {0x3B, 0x3D, 0x23, 0x02, 0x03, 0x10, 0x5F, 0x09, 0x00, 0x04,0x88, 0x01, 0x30, 0x0B, 0x00};
-
-static uint32_t msg_counter = 0;
-
 sf_worker::~sf_worker()
 {
   sonica_enb_dl_nbiot_free(&enb_dl);
@@ -291,22 +272,9 @@ void sf_worker::work_ul(stack_interface_phy_nb::ul_sched_list_t ul_grants)
       phy->stack->crc_info(npusch_start, npusch_rnti, len, true);
     }
     if (ret == -1) {
-      if (len == 11) {
-        memcpy(npusch_data, dummy_data, 11);
-        phy->stack->crc_info(npusch_start, npusch_rnti, 11, true);
-      } else if (len == 125) {
-        memcpy(npusch_data, dummy_data2, 125);
-        phy->stack->crc_info(npusch_start, npusch_rnti, 125, true);
-      } else {
-        if (msg_counter == 0) {
-          memcpy(npusch_data, dummy_data_bsr2, 15);
-          phy->stack->crc_info(npusch_start, npusch_rnti, 15, true);
-          msg_counter++;
-        } else {
-          printf("PHY: receive unhandle ul grant length=%d\n", len);
-          phy->stack->crc_info(npusch_start, npusch_rnti, len, false);
-        }
-      }
+      // report a failed NPUSCH decode as a CRC failure
+      printf("PHY: NPUSCH decode FAILED rnti=%x len=%d -> CRC fail\n", npusch_rnti, len);
+      phy->stack->crc_info(npusch_start, npusch_rnti, len, false);
     }
     if (ret == SRSLTE_SUCCESS || ret == -1) {
       has_ugrant = false;
@@ -317,6 +285,34 @@ void sf_worker::work_ul(stack_interface_phy_nb::ul_sched_list_t ul_grants)
 // TODO: Assign DCI with HARQ in MAC
 static bool h_ndi_dl = false;
 static bool h_ndi_ul = false;
+
+/* True if this subframe carries SIB1-NB, as scheduled by bc_sched::is_sib1_sf(). These subframes
+ * cannot carry another NPDSCH (36.213 16.4.1.3). */
+static bool sf_is_sib1(uint32_t sfn, uint32_t sf_idx)
+{
+  if (sf_idx != 4) {
+    return false;
+  }
+  srslte_mib_nb_t mib_nb  = {};
+  mib_nb.sched_info_sib1  = 5; // same value as bc_sched
+  mib_nb.sys_info_tag     = 14;
+  mib_nb.ac_barring       = false;
+  mib_nb.mode             = SRSLTE_NBIOT_MODE_STANDALONE;
+
+  uint32_t num_rep    = srslte_ra_n_rep_sib1_nb(&mib_nb);
+  uint32_t sib1_start = srslte_ra_nbiot_get_starting_sib1_frame(99, &mib_nb);
+
+  for (uint32_t k = 0; k < 4; k++) {
+    for (uint32_t i = 0; i < num_rep; i++) {
+      uint32_t first = k * SIB1_NB_TTI + sib1_start + (i * SIB1_NB_TTI / num_rep);
+      uint32_t valid_si_sfn = sfn + srslte_ra_nbiot_sib1_start(99, &mib_nb);
+      if (sfn >= first && sfn < first + 16 && (valid_si_sfn % 2) == 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 void sf_worker::work_dl(stack_interface_phy_nb::dl_sched_t& dl_grants,
                         stack_interface_phy_nb::ul_sched_t& ul_grants_tx)
@@ -406,19 +402,58 @@ void sf_worker::work_dl(stack_interface_phy_nb::dl_sched_t& dl_grants,
 
         srslte_ra_nbiot_dl_dci_to_grant(dci, &grant, sfn, sf_idx,
                                         DUMMY_R_MAX, false, cell.mode);
+
+        // srslte_ra_nbiot_dl_dci_to_grant() does not skip SIB1-NB subframes: move the start to the
+        // next valid DL subframe
+        while (sf_is_sib1(grant.start_sfn, grant.start_sfidx) ||
+               !srslte_ra_nbiot_is_valid_dl_sf(grant.start_sfn * 10 + grant.start_sfidx)) {
+          uint32_t next   = (grant.start_sfn * 10 + grant.start_sfidx + 1) % 10240;
+          grant.start_sfn = next / 10;
+          grant.start_sfidx = next % 10;
+        }
+
         dl_pending_grants.push_back({ grant, dci->alloc.rnti, dl_grants.npdsch.data[0] });
 
-        dci->ndi = h_ndi_dl;
-        h_ndi_dl = !h_ndi_dl;
+        if (dci->alloc.rnti == SRSLTE_PRNTI) {
+          // Paging: DCI format N2 with P-RNTI, no HARQ
+          sonica_enb_dl_nbiot_put_npdcch_paging(&enb_dl, dci, sf_idx);
+          printf("PHY DL: TTI %d, sending PAGING DCI (format N2, P-RNTI)\n", tti_tx_dl);
+        } else {
+          dci->ndi = h_ndi_dl;
+          h_ndi_dl = !h_ndi_dl;
 
-        sonica_enb_dl_nbiot_put_npdcch_dl(&enb_dl, dci, sf_idx);
+          sonica_enb_dl_nbiot_put_npdcch_dl(&enb_dl, dci, sf_idx);
+        }
       }
     }
   }
 
-  if (!npdsch_active && !dl_pending_grants.empty()) {
+  // Drop grants whose start subframe has passed, so they do not block the queue
+  while (!dl_pending_grants.empty()) {
+    const srslte_ra_nbiot_dl_grant_t& g   = dl_pending_grants.front().grant;
+    uint32_t                          st  = g.start_sfn * 10 + g.start_sfidx;
+    uint32_t                          age = (tti_tx_dl + 10240 - st) % 10240;
+    if (age > 0 && age < 1024) {
+      printf("PHY DL: dropping stale grant for rnti %d (start TTI %d, now %d)\n",
+             dl_pending_grants.front().rnti, st, tti_tx_dl);
+      dl_pending_grants.pop_front();
+    } else {
+      break;
+    }
+  }
+
+  if (!dl_pending_grants.empty()) {
     dl_grant_record& head_grant = dl_pending_grants.front();
-    if (head_grant.grant.start_sfn == sfn &&
+    if (npdsch_active && npdsch_rnti == SRSLTE_SIRNTI &&
+        head_grant.grant.start_sfn == sfn && head_grant.grant.start_sfidx == sf_idx) {
+      // A due grant takes precedence over an ongoing SI transmission, which is repeated in its next
+      // window
+      printf("PHY DL: preempting SI NPDSCH for grant to rnti %d\n", head_grant.rnti);
+      bzero(&npdsch_cfg, sizeof(srslte_npdsch_cfg_t));
+      npdsch_active = false;
+    }
+    if (!npdsch_active &&
+        head_grant.grant.start_sfn == sfn &&
         head_grant.grant.start_sfidx == sf_idx) {
       if (srslte_npdsch_cfg(&npdsch_cfg, cell, &head_grant.grant, sf_idx)) {
         Error("Error configuring NPDSCH for Data\n");

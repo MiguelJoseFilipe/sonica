@@ -172,6 +172,11 @@ void sched_ue::dl_buffer_state(uint8_t lc_id, uint32_t tx_queue, uint32_t retx_q
   if (lc_id < sched_interface::MAX_LC) {
     lch[lc_id].buf_retx = retx_queue;
     lch[lc_id].buf_tx   = tx_queue;
+    // NB-IoT has no scheduling request: grant uplink after each DL signaling message so the UE can
+    // answer it (e.g. Attach Complete after Attach Accept). Cleared in sf_sched::alloc_ul.
+    if (lc_id > 0 && (tx_queue > 0 || retx_queue > 0)) {
+      set_sr();
+    }
     Debug("SCHED: DL lcid=%d buffer_state=%d,%d\n", lc_id, tx_queue, retx_queue);
     printf("MAC sched_ue::dl_buffer_state : DL lcid=%d buffer_state=%d,%d\n", lc_id, tx_queue, retx_queue);
   }
@@ -522,7 +527,6 @@ std::pair<uint32_t, uint32_t> sched_ue::get_requested_dl_bytes(uint32_t ue_cc_id
   //  bool     is_dci_format1 = get_dci_format() == SRSLTE_DCI_FORMAT1;
   bool is_dci_format1 = true;
   if (is_dci_format1 and (lch[0].buf_tx > 0 or lch[0].buf_retx > 0)) {
-     printf("MAC sched_ue::get_requested_dl_bytes buf_tx=%d, buf_retx=%d\n", lch[0].buf_tx, lch[0].buf_retx);
     srb0_data = compute_sdu_total_bytes(0, lch[0].buf_retx);
     srb0_data += compute_sdu_total_bytes(0, lch[0].buf_tx);
   }
@@ -537,7 +541,6 @@ std::pair<uint32_t, uint32_t> sched_ue::get_requested_dl_bytes(uint32_t ue_cc_id
   for (int i = 1; i < sched_interface::MAX_LC; i++) {
     if (bearer_is_dl(&lch[i])) {
       if (lch[i].buf_tx > 0 or lch[i].buf_retx > 0){
-        printf("MAC sched_ue::get_requested_dl_bytes lcid=%d, buf_tx=%d, buf_retx=%d\n", i, lch[i].buf_tx, lch[i].buf_retx);
       }
       rb_data += compute_sdu_total_bytes(i, lch[i].buf_retx);
       rb_data += compute_sdu_total_bytes(i, lch[i].buf_tx);

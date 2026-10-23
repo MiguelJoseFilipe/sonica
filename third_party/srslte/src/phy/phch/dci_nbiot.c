@@ -390,6 +390,38 @@ int dci_formatN1_unpack(const srslte_dci_msg_t* msg, srslte_ra_nbiot_dl_dci_t* d
   return SRSLTE_SUCCESS;
 }
 
+/* Packs DCI format N2 (paging / direct indication), 36.212 Sec 6.4.3.3:
+ *   flag (1) | paging: i_sf (3) + mcs (4) + i_rep (4) + dci_sf_rep_num (3)
+ *            | direct indication: dir_indication_info (8) + spare
+ */
+int dci_formatN2_pack(const srslte_ra_nbiot_dl_dci_t* data, srslte_dci_msg_t* msg)
+{
+  uint8_t* y     = (uint8_t*)msg->payload;
+  uint8_t* start = y;
+
+  // Flag for paging/direct indication differentiation: 0 = direct indication, 1 = paging
+  *y++ = data->format ? 1 : 0;
+
+  if (data->format == 0) {
+    // Direct Indication information - 8 bits
+    srslte_bit_unpack(data->dir_indication_info, &y, 8);
+  } else {
+    srslte_bit_unpack(data->alloc.i_sf, &y, 3);            // Resource assignment
+    srslte_bit_unpack(data->mcs_idx, &y, 4);               // Modulation and coding scheme
+    srslte_bit_unpack(data->alloc.i_rep, &y, 4);           // Repetition number
+    srslte_bit_unpack(data->alloc.dci_sf_rep_num, &y, 3);  // DCI subframe repetition number
+  }
+
+  // pad any remaining bits (direct indication case) so the message has the fixed format size
+  while ((uint32_t)(y - start) < dci_formatN2_sizeof()) {
+    *y++ = 0;
+  }
+
+  msg->nof_bits = dci_formatN2_sizeof();
+  msg->format   = SRSLTE_DCI_FORMATN2;
+  return SRSLTE_SUCCESS;
+}
+
 int dci_formatN2_unpack(const srslte_dci_msg_t* msg, srslte_ra_nbiot_dl_dci_t* data)
 {
   uint8_t* y = (uint8_t*)msg->payload;
@@ -475,6 +507,8 @@ int srslte_dci_msg_pack_npdsch(const srslte_ra_nbiot_dl_dci_t* data,
   switch (format) {
     case SRSLTE_DCI_FORMATN1:
       return dci_formatN1_pack(data, msg, crc_is_crnti);
+    case SRSLTE_DCI_FORMATN2:
+      return dci_formatN2_pack(data, msg);
     default:
       fprintf(stderr, "DCI pack npdsch: Invalid DCI format %s in \n", srslte_dci_format_string(format));
       return SRSLTE_ERROR;
