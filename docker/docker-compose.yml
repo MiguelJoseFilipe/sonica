@@ -1,0 +1,68 @@
+# Copyright 2025-2026 LAAS-CNRS
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Sonica NB-IoT eNodeB and CIoT EPC with a USRP B210 over USB 3.0.
+#
+#   docker compose up -d sonica-epc      # CIoT EPC (MME/HSS/S-GW/P-GW), creates the srs_spgw_sgi TUN
+#   docker compose up -d sonica-enb      # eNodeB on the B210
+#   docker compose logs -f sonica-enb
+#   docker compose run --rm sonica-enb probe    # radio check only (uhd_find_devices + uhd_usrp_probe)
+#
+# Notes
+#   * host networking: the eNB reaches the EPC over 127.0.1.x as in the stock Sonica configs
+#     (enb_nb.conf: mme_addr 127.0.1.100, s1c/gtp bind 127.0.1.1), so no port mapping is needed.
+#   * B210 = USB device: /dev/bus/usb is mapped and the container runs privileged, because UHD
+#     re-enumerates the device after loading its firmware (the USB device node changes).
+#   * the first start downloads the B2xx FPGA/firmware images into the named volume uhd-images;
+#     later starts reuse it (SKIP_UHD_IMAGES=1 skips the check).
+#   * ./etc holds the configuration of the measurements (enb_nb.conf, rr_nb.conf, sib_nb.conf,
+#     drb_nb.conf, epc.conf, user_db.csv); edit it for your SIM cards and APN.
+#   * the EPC needs NET_ADMIN to create its TUN interface, and IP forwarding on the host for UE traffic.
+
+services:
+  sonica-enb:
+    image: sonica-nbiot:latest
+    container_name: sonica-enb
+    command: ["enb"]
+    privileged: true                 # USB re-enumeration after firmware load
+    network_mode: "host"
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    ulimits:
+      core: -1
+    environment:
+      ENB_CONF: /opt/sonica/etc/enb_nb.conf
+      # RAR timing advance values used in turn, one per detected preamble (calibration); default 5
+      SONICA_TA_LIST: "${SONICA_TA_LIST:-5}"
+      UHD_IMAGE_TYPES: b2xx
+      # EXTRA_ARGS: "--rf.device_args=serial=XXXXXXX"   # select one B210 if several are connected
+    volumes:
+      - ./etc:/opt/sonica/etc
+      - uhd-images:/usr/local/share/uhd/images
+    logging:
+      driver: json-file
+      options: { mode: non-blocking, max-buffer-size: 16m, max-size: 50m, max-file: "3" }
+    restart: unless-stopped
+
+  sonica-epc:
+    image: sonica-nbiot:latest
+    container_name: sonica-epc
+    command: ["epc"]
+    network_mode: "host"
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      EPC_CONF: /opt/sonica/etc/epc.conf
+      # 1 = page UEs by IMSI instead of S-TMSI (a UE with a stale GUTI still answers)
+      SONICA_PAGE_IMSI: "${SONICA_PAGE_IMSI:-0}"
+      SKIP_UHD_IMAGES: "1"           # the EPC has no radio
+    volumes:
+      - ./etc:/opt/sonica/etc
+    logging:
+      driver: json-file
+      options: { mode: non-blocking, max-buffer-size: 16m, max-size: 50m, max-file: "3" }
+    restart: unless-stopped
+
+volumes:
+  uhd-images:
