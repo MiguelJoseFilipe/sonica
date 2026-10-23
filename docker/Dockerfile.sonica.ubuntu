@@ -1,0 +1,104 @@
+# Copyright 2025-2026 LAAS-CNRS
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Sonica (NB-IoT eNodeB + CIoT EPC) in Docker, built the same way OAI builds its gNB image:
+#   stage 1 "sonica-base"  : Ubuntu 22.04 + UHD 4.8.0.0 built FROM SOURCE with OAI's TDD switching patch
+#   stage 2 "sonica-build" : Sonica compiled with meson/ninja against that UHD
+#   stage 3 "sonica"       : slim runtime (no compilers), binaries + example configs + tini + entrypoint
+#
+# BUILD (from the root of this repository):
+#   docker build -f docker/Dockerfile.sonica.ubuntu -t sonica-nbiot:latest .
+#   Options: --build-arg UHD_VERSION=4.8.0.0 --build-arg UBUNTU_IMAGE=ubuntu:22.04
+#   The UHD stage is cached: editing Sonica source only re-runs stage 2 (~1 min).
+#
+# RUN: see docker/docker-compose.yml and docker/README.md.
+
+ARG UBUNTU_IMAGE=ubuntu:22.04
+
+# ---------------------------------------------------------------- stage 1: UHD from source (as in OAI)
+FROM ${UBUNTU_IMAGE} AS sonica-base
+ARG UHD_VERSION=4.8.0.0
+ARG TARGETARCH=amd64
+ENV DEBIAN_FRONTEND=noninteractive TZ=Europe/Paris
+
+RUN apt-get update && apt-get install --yes \
+      build-essential cmake ninja-build git wget ca-certificates pkg-config \
+      python3-dev python3-pip python3-mako python3-numpy python3-requests python3-ruamel.yaml python3-setuptools \
+      libboost-all-dev libusb-1.0-0-dev doxygen && \
+    rm -rf /var/lib/apt/lists/*
+
+# Tini, exactly as OAI does, so the container reports exit signals properly
+ENV TINI_VERSION=v0.19.0
+RUN wget -q https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TARGETARCH} -O /tini && chmod +x /tini
+
+# OAI's UHD TDD patch: it shortens the TX/RX switching time on TDD, which is what OAI's own
+# radio/USRP/README.md recommends instead of running with --continuous-tx.
+COPY docker/uhd-4.5plus-tdd-patch.diff /tmp/uhd-tdd.diff
+RUN git clone --depth 1 --branch v${UHD_VERSION} https://github.com/EttusResearch/uhd.git /tmp/uhd && \
+    cd /tmp/uhd && git apply /tmp/uhd-tdd.diff && \
+    mkdir -p host/build && cd host/build && \
+    cmake ../ -GNinja \
+      -DENABLE_TESTS=OFF -DENABLE_EXAMPLES=OFF -DENABLE_B100=OFF -DENABLE_DOXYGEN=OFF \
+      -DENABLE_MANUAL=OFF -DENABLE_MAN_PAGES=OFF -DENABLE_MAN_PAGE_COMPRESSION=OFF \
+      -DENABLE_OCTOCLOCK=ON -DENABLE_USRP1=OFF -DENABLE_USRP2=OFF && \
+    ninja && ninja install && ldconfig && \
+    rm -rf /tmp/uhd /tmp/uhd-tdd.diff
+
+# ---------------------------------------------------------------- stage 2: build Sonica
+FROM sonica-base AS sonica-build
+RUN apt-get update && apt-get install --yes \
+      meson libfftw3-dev libmbedtls-dev libboost-program-options-dev libconfig++-dev libsctp-dev libzmq3-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/sonica-src
+COPY . .
+# meson picks up UHD (and ZeroMQ for RF emulation) through pkg-config; both are present in this stage.
+RUN meson setup builddir --buildtype=release && \
+    meson compile -C builddir && \
+    ls -l builddir/sonica_enb/sonica_enb builddir/third_party/srsepc_ciot/src/srsepc_ciot
+# Sonica links some of its own code as shared libraries (libsrslte_rf.so, ...) that live only in builddir:
+# collect them so the runtime stage can install them into /usr/local/lib.
+RUN mkdir -p /opt/sonica-libs && find builddir -name "*.so*" -type f -exec cp -a {} /opt/sonica-libs/ \; && ls /opt/sonica-libs
+
+# ---------------------------------------------------------------- stage 3: runtime
+FROM ${UBUNTU_IMAGE} AS sonica
+ENV DEBIAN_FRONTEND=noninteractive TZ=Europe/Paris
+LABEL org.opencontainers.image.title="Sonica NB-IoT (eNB + CIoT EPC)" \
+      org.opencontainers.image.description="Sonica built on Ubuntu 22.04 with UHD 4.8 (OAI TDD patch), mirroring OAI's image layout"
+
+RUN apt-get update && apt-get install --yes \
+      # UHD runtime
+      libboost-serialization1.74.0 libboost-thread1.74.0 libboost-filesystem1.74.0 libboost-chrono1.74.0 \
+      libboost-date-time1.74.0 libboost-program-options1.74.0 libboost-system1.74.0 libusb-1.0-0 \
+      python3 python3-requests python3-ruamel.yaml \
+      # libpython: UHD 4.8 builds its Python API, so libuhd.so links against libpython3.10
+      libpython3.10 \
+      # Sonica runtime
+      libfftw3-single3 libmbedtls14 libmbedcrypto7 libmbedx509-1 libconfig++9v5 libsctp1 libzmq5 \
+      # networking / debugging helpers (UE traffic, tunnels, quick checks)
+      iproute2 iputils-ping iperf3 tcpdump ethtool net-tools procps && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=sonica-base /tini /tini
+COPY --from=sonica-base /usr/local/lib/libuhd.so* /usr/local/lib/
+COPY --from=sonica-base /usr/local/lib/uhd /usr/local/lib/uhd
+COPY --from=sonica-base /usr/local/bin/uhd_find_devices /usr/local/bin/uhd_usrp_probe /usr/local/bin/uhd_images_downloader /usr/local/bin/
+COPY --from=sonica-base /usr/local/share/uhd /usr/local/share/uhd
+COPY --from=sonica-build /opt/sonica-libs/ /usr/local/lib/
+RUN ldconfig
+
+WORKDIR /opt/sonica
+COPY --from=sonica-build /opt/sonica-src/builddir/sonica_enb/sonica_enb bin/sonica_enb
+COPY --from=sonica-build /opt/sonica-src/builddir/third_party/srsepc_ciot/src/srsepc_ciot bin/srsepc_ciot
+COPY --from=sonica-build /opt/sonica-src/example-config/ etc-default/
+COPY docker/entrypoint.sh /opt/sonica/bin/entrypoint.sh
+RUN chmod +x /opt/sonica/bin/entrypoint.sh && ln -s /opt/sonica/bin/sonica_enb /usr/local/bin/sonica_enb && \
+    ln -s /opt/sonica/bin/srsepc_ciot /usr/local/bin/srsepc_ciot && \
+    # the shipped configs name companion files without a path; Sonica looks for them in /etc/sonica
+    mkdir -p /etc && ln -s /opt/sonica/etc /etc/sonica
+
+# /opt/sonica/etc is where your own configs are mounted; if empty the example configs are copied there.
+VOLUME /opt/sonica/etc
+ENV UHD_IMAGES_DIR=/usr/local/share/uhd/images
+ENTRYPOINT ["/tini", "-v", "--", "/opt/sonica/bin/entrypoint.sh"]
+CMD ["enb"]

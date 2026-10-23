@@ -1,0 +1,38 @@
+# Copyright 2025-2026 LAAS-CNRS
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Sonica NB-IoT eNodeB with satellite Doppler emulation, USRP X310 over 10 GbE.
+#
+#   python3 ../scripts/ntn_doppler/TCP_server.py -v      # clock server, from scripts/ntn_doppler
+#   docker compose up -d sonica-ntn-enb
+#   docker compose logs -f sonica-ntn-enb
+#
+# Notes
+#   * no core network: the eNB broadcasts the cell (NPSS/NSSS, NPBCH, SIBs) with the Doppler shift
+#     of the pass; mme_addr in enb_nb.conf points to an address with no MME.
+#   * the eNB reads the Doppler emulation config as ../../../config.txt from its working directory
+#     /opt/sonica/etc, i.e. /config.txt; REMOTE_IP in it is the clock server address.
+#   * host networking: the X310 is reached over 10 GbE and the clock server over the host network.
+
+services:
+  sonica-ntn-enb:
+    image: sonica-ntn:latest
+    container_name: sonica-ntn-enb
+    command: ["enb"]
+    network_mode: "host"
+    cap_add: [SYS_NICE, IPC_LOCK]
+    ulimits:
+      core: -1
+      memlock: -1
+      rtprio: 99
+    environment:
+      ENB_CONF: /opt/sonica/etc/enb_nb.conf
+      SKIP_UHD_IMAGES: "1"           # X310 FPGA image already on the device
+    volumes:
+      - ./etc:/opt/sonica/etc
+      - ../scripts/ntn_doppler/config.txt:/config.txt
+    # Physical cores of NUMA node 0 on the measurement host; adapt to the host.
+    cpuset: "12,14,16,18,20,22"
+    logging:
+      driver: json-file
+      options: { mode: non-blocking, max-buffer-size: 16m, max-size: 50m, max-file: "3" }
