@@ -49,6 +49,7 @@ double g_pass_start_offset = 0.0;
 double g_vis_time = 0.0;
 std::atomic<bool> g_calibration{false};
 std::atomic<double> g_calibration_doppler_hz{0.0};
+std::atomic<double> g_radio_to_wall{0.0};  // wall clock minus radio clock (s), 0 until the first RX
 
 int* pointer_maxElevation;
 double* pointer_AWGN;
@@ -390,6 +391,13 @@ void txrx::run_thread()
       }
 
       radio_h->rx_now(buffer, sf_len, &rx_time);
+
+      // rx_now returns when the whole subframe has arrived: now = rx_time + 1 ms on the wall clock
+      {
+        double wall_now = std::chrono::duration_cast<std::chrono::duration<double>>(
+                              std::chrono::system_clock::now().time_since_epoch()).count();
+        g_radio_to_wall.store(wall_now - (rx_time.full_secs + rx_time.frac_secs) - 1e-3);
+      }
 
       /* Compute TX time: Any transmission happens in TTI+4 thus advance 4 ms the reception time */
       srslte_timestamp_copy(&tx_time, &rx_time);

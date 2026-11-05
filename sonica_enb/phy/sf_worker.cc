@@ -41,6 +41,7 @@ extern std::mutex experiment_times_mutex;
 extern std::atomic<bool> g_tx_started;
 extern double g_pass_start_offset;
 extern double g_vis_time;
+extern std::atomic<double> g_radio_to_wall;
 extern std::atomic<bool> g_calibration;
 extern std::atomic<double> g_calibration_doppler_hz;
 #include "sonica_enb/hdr/phy/doppler_shift.h"
@@ -265,8 +266,15 @@ void sf_worker::work_imp() {
     ref_experiment_time = experiment_times.experiment_time;
     ref_wall_sec        = experiment_times.start_time;
   }
-  auto now = system_clock::now();
-  double now_sec = duration_cast<duration<double>>(now.time_since_epoch()).count();
+  // Doppler at the on-air time of this subframe (tx_time on the radio clock), not at the time the worker
+  // computes it, which runs ahead of transmission; generation time until the first subframe is received
+  double now_sec;
+  double radio_to_wall = g_radio_to_wall.load();
+  if (radio_to_wall != 0.0) {
+    now_sec = tx_time.full_secs + tx_time.frac_secs + radio_to_wall;
+  } else {
+    now_sec = duration_cast<duration<double>>(system_clock::now().time_since_epoch()).count();
+  }
   float doppler = 0.0f;
   // Calibration: constant Doppler; otherwise the Doppler of the pass
   if (g_calibration.load()) {
