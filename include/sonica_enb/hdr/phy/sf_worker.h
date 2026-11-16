@@ -45,6 +45,8 @@ public:
   cf_t* get_buffer_rx(uint32_t antenna_idx);
   cf_t* get_buffer_tx(uint32_t antenna_idx);
   void  set_time(uint32_t hfn, uint32_t tti, uint32_t tx_worker_cnt, srslte_timestamp_t tx_time);
+  // NTN downlink of this subframe: Doppler (Hz), amplitude, carrier phase at its first sample (rad)
+  void  set_ntn(float doppler_hz, float amp, double phase0);
 
   // int      add_rnti(uint16_t rnti, uint32_t cc_idx, bool is_pcell, bool is_temporal);
   // void     rem_rnti(uint16_t rnti);
@@ -77,6 +79,9 @@ private:
   uint32_t           t_rx = 0, t_tx_dl = 0, t_tx_ul = 0;
   uint32_t           tx_worker_cnt = 0;
   srslte_timestamp_t tx_time       = {};
+  float              ntn_doppler   = 0.0f;
+  float              ntn_amp       = 1.0f;
+  double             ntn_phase0    = 0.0;
 
   cf_t*    signal_buffer_rx[SRSLTE_MAX_PORTS] = {};
   cf_t*    signal_buffer_tx[SRSLTE_MAX_PORTS] = {};

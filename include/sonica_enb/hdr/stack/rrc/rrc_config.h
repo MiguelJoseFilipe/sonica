@@ -35,6 +35,8 @@ struct rrc_cfg_t {
   asn1::rrc::sib_type1_nb_s sib1;
   asn1::rrc::sib_type2_nb_r13_s sib2;
   asn1::rrc::sib_type3_nb_r13_s sib3;
+  bool                           sib31_enabled = false;  // NTN: SIB31-NB in its own SI message (SI #2)
+  asn1::rrc::sib_type31_nb_r17_s sib31;                  // config part; ephemeris and epoch set per SI window
 
   asn1::rrc::mac_main_cfg_nb_r13_s    mac_cnfg;
   asn1::rrc::npusch_cfg_ded_nb_r13_s  npusch_cfg;

@@ -188,6 +188,7 @@ void sf_sched::set_bc_sched_result(sched_interface::dl_sched_res_t *dl_result)
 
         bc->dci = bc_alloc.dci;
         bc->is_new_sib = bc_alloc.is_new_sib;
+        bc->index = bc_alloc.sib_idx;
 
 	dl_result->nof_bc_elems++;
   }

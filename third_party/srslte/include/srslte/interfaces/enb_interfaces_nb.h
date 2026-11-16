@@ -337,6 +337,8 @@ public:
 
   ///< Provide packed SIB to MAC (buffer is managed by RRC)
   virtual uint8_t* read_pdu_bcch_dlsch(const uint32_t sib_index) = 0;
+  ///< Packed SI message carrying SIB31-NB for the SI window of DL subframe tti_tx (buffer managed by RRC)
+  virtual uint8_t* read_pdu_sib31(uint32_t tti_tx) { return nullptr; }
 };
 
 // RRC interface for PDCP

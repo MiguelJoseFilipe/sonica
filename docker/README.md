@@ -30,6 +30,10 @@ docker compose down
 
 - `../scripts/ntn_doppler/config.txt` sets the pass (maximum elevation), the calibration mode
   (constant Doppler) and the clock server address (`REMOTE_IP`). The eNB reads it as `/config.txt`.
+- Quasi-earth-fixed model (`Doppler model = 1`): the eNB plays back a QEF table (residual
+  Doppler, and the DL beam gain when `Beam radius km` > 0), with the same keys and table format
+  as the OAI gNB. Put the tables in `../scripts/ntn_doppler/qef/` (mounted at `/qef`); the
+  range rates in the table are carrier-independent, the Doppler uses `Carrier frequency`.
 - `etc/` holds the eNB configuration: guard-band carrier (`rr_nb.conf`), PLMN 001/01, X310 RF
   settings (`enb_nb.conf`). No core network is used: `mme_addr` points to an address without an
   MME, and the eNB only broadcasts the cell.

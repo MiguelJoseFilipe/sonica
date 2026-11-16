@@ -21,6 +21,7 @@
 
 #include "enb_cfg_parser.h"
 #include "sonica_enb/hdr/enb_nb.h"
+#include "sonica_enb/hdr/stack/mac/scheduler_carrier.h"
 #include "srslte/asn1/liblte_common.h"
 #include "srslte/asn1/rrc_asn1_utils.h"
 #include "srslte/phy/common/phy_common.h"
@@ -582,6 +583,64 @@ int parse_sibs(all_args_t* args_, rrc_cfg_t* rrc_cfg_, phy_cfg_t* phy_config_com
   // Will be updated in MAC, just set to 0 here
   // not from_number(0): it sizes the bitstring from log2(0) and the SIB1 encode fails
   sib1->hyper_sfn_msb_r13.resize(8);
+
+  // Optional NTN satellite assistance: SIB31-NB (TS 36.331 V17) in its own SI message, SI #2, mapped by
+  // SIB1-NB-v1530; the cell is barred for legacy UEs and not barred for NTN UEs (cellBarred-NTN-r17)
+  {
+    bool                               sib31_en = false;
+    sched_info_nb_r13_s::si_tb_r13_e_  si_tb;
+    serving_satellite_info_r17_s&      ssi = rrc_cfg_->sib31.serving_satellite_info_r17;
+    parser::section                    s31("sib31");
+    s31.set_optional(&sib31_en);
+    s31.add_field(make_asn1_enum_number_parser("si_tb_r13", &si_tb));
+    s31.add_field(make_asn1_enum_number_parser("ul_sync_validity_dur_r17", &ssi.ul_sync_validity_dur_r17));
+    s31.add_field(new parser::field<uint16_t>("k_offset_r17", &ssi.k_offset_r17));
+    if (parser::parse_section(args_->enb_files.sib_config, &s31) != SRSLTE_SUCCESS) {
+      return SRSLTE_ERROR;
+    }
+    if (sib31_en) {
+      // bc_sched places SI #1 in frames 0..15 and SI #2 in 16..31 of every 512, every 4th frame
+      if (sib1->sched_info_list_r13.size() != 1 || sib1->si_win_len_r13.to_number() != 160 ||
+          sib1->sched_info_list_r13[0].si_periodicity_r13.to_number() != 512 ||
+          sib1->sched_info_list_r13[0].si_repeat_pattern_r13.to_number() != 4 || si_tb.to_number() < 208 ||
+          ssi.k_offset_r17 > 1023) {
+        ERROR("sib31 needs one sched_info entry with si_periodicity_r13 = 512, si_repeat_pattern_r13 = every4thRF, "
+              "si_window_length_r13 = 160, si_tb_r13 >= 208 and k_offset_r17 <= 1023\n");
+        return SRSLTE_ERROR;
+      }
+      sched_info_nb_r13_s si2 = sib1->sched_info_list_r13[0];
+      si2.sib_map_info_r13.resize(0);
+      si2.si_tb_r13 = si_tb;
+      sib1->sched_info_list_r13.push_back(si2);
+
+      cell_access->cell_barred_r13.value = sib_type1_nb_s::cell_access_related_info_r13_s_::cell_barred_r13_opts::barred;
+      sib1->non_crit_ext_present = true;
+      auto& v1350               = sib1->non_crit_ext;
+      v1350.non_crit_ext_present = true;
+      auto& v1430               = v1350.non_crit_ext;
+      v1430.non_crit_ext_present = true;
+      auto& v1450               = v1430.non_crit_ext;
+      v1450.non_crit_ext_present = true;
+      auto& v1530               = v1450.non_crit_ext;
+      v1530.non_crit_ext_present = true;
+      auto& v1610               = v1530.non_crit_ext;
+      v1610.non_crit_ext_present = true;
+      auto& v1700                                    = v1610.non_crit_ext;
+      v1700.cell_access_related_info_ntn_r17_present = true;
+      v1700.cell_access_related_info_ntn_r17.cell_barred_ntn_r17.value =
+          sib_type1_nb_v1700_s::cell_access_related_info_ntn_r17_s_::cell_barred_ntn_r17_opts::not_barred;
+      // one entry per schedulingInfoList-r13 entry: none for SI #1, sibType31 for SI #2
+      sched_info_nb_v1530_s none, s31map;
+      s31map.sib_map_info_v1530_present = true;
+      s31map.sib_map_info_v1530.push_back(sib_type_nb_v1530_opts::sib_type31_nb_r17);
+      v1530.sched_info_list_v1530_present = true;
+      v1530.sched_info_list_v1530.push_back(none);
+      v1530.sched_info_list_v1530.push_back(s31map);
+
+      rrc_cfg_->sib31_enabled = true;
+      g_sib31_si_tb           = si_tb.to_number();
+    }
+  }
 
   // Generate SIB2
   if (sib_sections::parse_sib2(args_->enb_files.sib_config, sib2) != SRSLTE_SUCCESS) {

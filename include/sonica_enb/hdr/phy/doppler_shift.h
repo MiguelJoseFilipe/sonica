@@ -33,6 +33,14 @@ extern std::atomic<double> start_time;
 extern double* pointer_AWGN;
 extern double* pointer_FSPL;
 
+// Quasi-earth-fixed model ("Doppler model = 1" in config.txt), ported from the OAI gNB
+// (nr_doppler_shift.c): residual Doppler and DL beam gain played back from a table.
+extern bool qef_model;                        // true when the QEF table drives doppler_table
+extern std::vector<double> qef_amp_table;     // DL amplitude per row, empty = beam gain off
+extern double qef_t0;                         // experiment time of row 0 (s)
+extern double qef_dt;                         // row spacing (s)
+extern std::vector<double> qef_sat_table[6];  // satellite ECEF x, y, z (m), vx, vy, vz (m/s) per row
+
 namespace sonica_enb {
     class doppler_shift
     {
@@ -46,6 +54,13 @@ namespace sonica_enb {
       std::vector<double> precompute_doppler(double Theta_max, double t_start, double t_end, double dt);
       static double get_precomputed_doppler(const std::vector<double>& doppler_values,
                                double t_start, double dt, double t);
+      static bool load_qef(double carrier_hz);
+      static double qef_at(const std::vector<double>& v, double t);
     };
+
+    // Satellite ECEF state from the QEF table at the on-air time of DL subframe tti_tx (0..10239), on the
+    // pass clock of the Doppler; false (state of the first row) before the first transmitted subframe or in
+    // calibration, zeros without a QEF table. Defined in txrx.cc; used by RRC for SIB31-NB.
+    bool ntn_sat_state_at(uint32_t tti_tx, double pos[3], double vel[3]);
 }
 #endif /* DOPPLER_SHIFT_H */

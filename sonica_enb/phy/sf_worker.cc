@@ -37,14 +37,6 @@
 #include "sonica_enb/hdr/phy/txrx.h"
 extern ExperimentTimes experiment_times;
 extern std::mutex experiment_times_mutex;
-// Pass clock (defined in txrx.cc, see txrx.h)
-extern std::atomic<bool> g_tx_started;
-extern double g_pass_start_offset;
-extern double g_vis_time;
-extern std::atomic<double> g_radio_to_wall;
-extern std::atomic<bool> g_calibration;
-extern std::atomic<double> g_calibration_doppler_hz;
-#include "sonica_enb/hdr/phy/doppler_shift.h"
 
 
 #define _USE_MATH_DEFINES
@@ -159,6 +151,13 @@ cf_t* sf_worker::get_buffer_tx(uint32_t antenna_idx)
   return signal_buffer_tx[antenna_idx];
 }
 
+void sf_worker::set_ntn(float doppler_hz, float amp, double phase0)
+{
+  ntn_doppler = doppler_hz;
+  ntn_amp     = amp;
+  ntn_phase0  = phase0;
+}
+
 void sf_worker::set_time(uint32_t hfn_, uint32_t tti_, uint32_t tx_worker_cnt_, srslte_timestamp_t tx_time_)
 {
   hfn       = hfn_;
@@ -255,44 +254,10 @@ void sf_worker::work_imp() {
   phy->set_ul_grants(t_rx, ul_grants);
 
   work_dl(dl_grants[0], ul_grants_tx[0]);
-  int maxElevation = *pointer_maxElevation;
-
-  // Pass time: extrapolated from the last clock synchronization and looped over
-  // [-vis/2, +vis/2). No Doppler before the first transmitted subframe.
-  using namespace std::chrono;
-  double ref_experiment_time, ref_wall_sec;
-  {
-    std::lock_guard<std::mutex> lock(experiment_times_mutex);
-    ref_experiment_time = experiment_times.experiment_time;
-    ref_wall_sec        = experiment_times.start_time;
-  }
-  // Doppler at the on-air time of this subframe (tx_time on the radio clock), not at the time the worker
-  // computes it, which runs ahead of transmission; generation time until the first subframe is received
-  double now_sec;
-  double radio_to_wall = g_radio_to_wall.load();
-  if (radio_to_wall != 0.0) {
-    now_sec = tx_time.full_secs + tx_time.frac_secs + radio_to_wall;
-  } else {
-    now_sec = duration_cast<duration<double>>(system_clock::now().time_since_epoch()).count();
-  }
-  float doppler = 0.0f;
-  // Calibration: constant Doppler; otherwise the Doppler of the pass
-  if (g_calibration.load()) {
-    doppler = static_cast<float>(g_calibration_doppler_hz.load());
-  } else if (g_tx_started.load()) {
-    double real = now_sec - ref_wall_sec + ref_experiment_time;
-    double pass_t = g_pass_start_offset + std::fmod(real - g_pass_start_offset, g_vis_time);
-    if (pass_t < g_pass_start_offset) pass_t += g_vis_time;
-    doppler = doppler_shift::get_precomputed_doppler(doppler_table,
-                                                     g_pass_start_offset,
-                                                     0.1,
-                                                     pass_t);
-  }
-
   // Phasor sampling rate: the radio rate of the cell (1.92 MHz for NB-IoT)
   const float fs = static_cast<float>(SRSLTE_SF_LEN_PRB(phy->get_nof_prb()) * 1000u);
   // Precompute phasor increment per sample
-  float delta_angle = 2.0f * M_PI * doppler / fs;
+  float delta_angle = 2.0f * M_PI * ntn_doppler / fs;
   float cos_delta = cosf(delta_angle);
   float sin_delta = sinf(delta_angle);
 
@@ -301,9 +266,10 @@ void sf_worker::work_imp() {
       cf_t* buffer = get_buffer_tx(ant);
       uint32_t buffer_len = SRSLTE_SF_LEN_PRB(phy->get_nof_prb());
 
-      // Initialize phasor at 0 angle
-      float phasor_re = 1.0f;
-      float phasor_im = 0.0f;
+      // Phasor starts at the carrier phase reached at this subframe (continuous across subframes,
+      // see txrx.cc); its magnitude applies the DL amplitude
+      float phasor_re = ntn_amp * static_cast<float>(cos(ntn_phase0));
+      float phasor_im = ntn_amp * static_cast<float>(sin(ntn_phase0));
 
       for (uint32_t i = 0; i < buffer_len; i++) {
           float re = crealf(buffer[i]);

@@ -24,6 +24,8 @@
 #include "srslte/asn1/asn1_utils.h"
 #include "srslte/asn1/rrc_asn1_utils.h"
 #include "srslte/asn1/rrc_asn1_nbiot.h"
+#include "sonica_enb/hdr/phy/doppler_shift.h"
+#include <cmath>
 
 using srslte::byte_buffer_t;
 
@@ -526,6 +528,65 @@ uint8_t* rrc::read_pdu_bcch_dlsch(const uint32_t sib_index)
   return sib_buffer2->msg;
 }
 
+// SI #2: SIB31-NB with the satellite state vectors at the epoch, TS 36.331 V17.16.0. One payload per SI window,
+// so all its repetitions are identical; rebuilt more than 5 s after the last repetition of the previous window.
+uint8_t* rrc::read_pdu_sib31(uint32_t tti_tx)
+{
+  const uint32_t sfn     = tti_tx / 10;
+  const int32_t  win_sfn = (int32_t)(sfn - sfn % 512 + 16); // bc_sched: frames 16..31 of every 512
+  if (win_sfn != sib31_win_sfn) {
+    sib31_win_sfn = win_sfn;
+    // epochTime = start of the frame ending the 160 ms SI window, i.e. after the last repetition, as when absent
+    const uint32_t epoch_sfn = (uint32_t)(win_sfn + 16) % 1024;
+    double         pos[3], vel[3];
+    const bool     live = ntn_sat_state_at(epoch_sfn * 10, pos, vel);
+    const auto&    sv   = pack_sib31(epoch_sfn, pos, vel);
+    printf("[SIB31] SI window SFN %d, epoch SFN %u: pos %.1f %.1f %.1f m, vel %.2f %.2f %.2f m/s%s\n",
+           win_sfn, epoch_sfn, sv.pos_x_r17 * 1.3, sv.pos_y_r17 * 1.3, sv.pos_z_r17 * 1.3, sv.velocity_vx_r17 * 0.06,
+           sv.velocity_vy_r17 * 0.06, sv.velocity_vz_r17 * 0.06,
+           live ? "" : qef_model ? " (pass not running: first table row)" : " (NO QEF TABLE: set Doppler model = 1)");
+  }
+  return sib_buffer31->msg;
+}
+
+// Packs the SI message carrying SIB31-NB into sib_buffer31, zero padded to si_tb_r13; returns the state vectors
+asn1::rrc::ephemeris_state_vectors_r17_s rrc::pack_sib31(uint32_t epoch_sfn, const double pos[3], const double vel[3])
+{
+  asn1::rrc::bcch_dl_sch_msg_nb_s msg;
+  msg.msg.set_c1().set_sys_info_r13().crit_exts.set_sys_info_r13();
+  asn1::rrc::sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_ item;
+  asn1::rrc::sib_type31_nb_r17_s&         sib31 = item.set_sib31_v1700();
+  sib31                                          = cfg.sib31;
+  asn1::rrc::serving_satellite_info_r17_s& ssi   = sib31.serving_satellite_info_r17;
+  ssi.epoch_time_r17_present                     = true;
+  ssi.epoch_time_r17.start_sfn_r17               = epoch_sfn;
+  ssi.epoch_time_r17.start_sub_frame_r17         = 0;
+  asn1::rrc::ephemeris_state_vectors_r17_s& sv   = ssi.ephemeris_info_r17.set_state_vectors();
+  sv.pos_x_r17       = (int32_t)lround(pos[0] / 1.3); // step 1.3 m
+  sv.pos_y_r17       = (int32_t)lround(pos[1] / 1.3);
+  sv.pos_z_r17       = (int32_t)lround(pos[2] / 1.3);
+  sv.velocity_vx_r17 = (int32_t)lround(vel[0] / 0.06); // step 0.06 m/s
+  sv.velocity_vy_r17 = (int32_t)lround(vel[1] / 0.06);
+  sv.velocity_vz_r17 = (int32_t)lround(vel[2] / 0.06);
+  const asn1::rrc::ephemeris_state_vectors_r17_s ret = sv;
+  msg.msg.c1().sys_info_r13().crit_exts.sys_info_r13().sib_type_and_info_r13.push_back(item);
+
+  // The PHY encodes the whole transport block
+  const uint32_t si_tb = cfg.sib1.sched_info_list_r13[1].si_tb_r13.to_number();
+  memset(sib_buffer31->msg, 0, si_tb / 8);
+  asn1::bit_ref bref(sib_buffer31->msg, sib_buffer31->get_tailroom());
+  if (msg.pack(bref) != asn1::SRSASN_SUCCESS) {
+    rrc_log->error("SIB31-NB encoding fail\n");
+    fprintf(stderr, "[SIB31] encoding fail (state vector out of range?)\n");
+  }
+  if ((uint32_t)bref.distance() > si_tb) { // fixed size for a given config: caught at init
+    fprintf(stderr, "[SIB31] SI message is %d bits, more than si_tb_r13 = %u\n", bref.distance(), si_tb);
+    std::exit(EXIT_FAILURE);
+  }
+  sib_buffer31->N_bytes = si_tb / 8;
+  return ret;
+}
+
 void rrc::tti_clock()
 {
   rrc_pdu p;
@@ -856,6 +917,12 @@ void rrc::generate_sibs()
   }
   sib_buffer2->N_bytes = bref2.distance_bytes();
   // log_data(sib_buffer2->msg, sib_buffer2->N_bytes);
+
+  if (cfg.sib31_enabled) {
+    const double zero[3] = {};
+    sib_buffer31         = srslte::allocate_unique_buffer(*pool);
+    pack_sib31(0, zero, zero); // size check before the first transmission
+  }
 }
 
 /*******************************************************************************

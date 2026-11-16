@@ -531,6 +531,8 @@ int mac::get_dl_sched(uint32_t hfn, uint32_t tti_tx_dl, dl_sched_list_t &dl_sche
       sib1_content[2] = s2;
 
       dl_sched_res->npdsch.data[0] = sib1_content;
+    } else if (sched_result.bc[i].index == 1) {
+      dl_sched_res->npdsch.data[0] = rrc_h->read_pdu_sib31(tti_tx_dl);
     } else {
       dl_sched_res->npdsch.data[0] = rrc_h->read_pdu_bcch_dlsch(1);
     }

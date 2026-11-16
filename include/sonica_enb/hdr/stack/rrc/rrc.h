@@ -55,6 +55,7 @@ public:
 
   // rrc_interface_mac
   uint8_t* read_pdu_bcch_dlsch(const uint32_t sib_index) override;
+  uint8_t* read_pdu_sib31(uint32_t tti_tx) override;
   bool     is_paging_opportunity(uint32_t tti, uint32_t* payload_len) override;
   uint8_t* read_pdu_pcch(uint32_t buffer_size) override;
   void     add_paging_id(uint32_t ueid, const asn1::s1ap::ue_paging_id_c& ue_paging_id);
@@ -172,6 +173,7 @@ private:
   void     process_release_complete(uint16_t rnti);
   void rem_user(uint16_t rnti);
   void generate_sibs();
+  asn1::rrc::ephemeris_state_vectors_r17_s pack_sib31(uint32_t epoch_sfn, const double pos[3], const double vel[3]);
 
 
 
@@ -198,6 +200,8 @@ private:
 
   srslte::unique_byte_buffer_t sib_buffer1;
   srslte::unique_byte_buffer_t sib_buffer2;
+  srslte::unique_byte_buffer_t sib_buffer31;      // SI #2: SIB31-NB, rebuilt once per SI window
+  int32_t                      sib31_win_sfn = -1; // SFN starting the SI window of sib_buffer31
 
   typedef struct {
     uint16_t                     rnti;

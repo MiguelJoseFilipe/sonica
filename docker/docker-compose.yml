@@ -31,6 +31,7 @@ services:
     volumes:
       - ./etc:/opt/sonica/etc
       - ../scripts/ntn_doppler/config.txt:/config.txt
+      - ../scripts/ntn_doppler/qef:/qef:ro   # QEF tables ("QEF table = qef/<file>.csv")
     # Physical cores of NUMA node 0 on the measurement host; adapt to the host.
     cpuset: "12,14,16,18,20,22"
     logging:

@@ -91,6 +91,9 @@ private:
   std::unique_ptr<ra_sched> ra_sched_ptr;
 };
 
+// TBS of SI #2 (SIB31-NB), set by the config parser; 0 = no SI #2
+extern uint32_t g_sib31_si_tb;
+
 //! Broadcast (SIB + paging) scheduler
 class bc_sched
 {
@@ -116,6 +119,7 @@ private:
 
   uint32_t                 sib2_num_sf;
   srslte_ra_nbiot_dl_dci_t ra_dl_sib2 = {};
+  srslte_ra_nbiot_dl_dci_t ra_dl_si2  = {};
 
 //  void update_si_windows(sf_sched* tti_sched);
   void alloc_sibs(uint32_t hfn, sf_sched* tti_sched);

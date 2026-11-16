@@ -55,6 +55,81 @@ int* pointer_maxElevation;
 double* pointer_AWGN;
 double* pointer_FSPL;
 
+// NTN downlink of the subframe transmitted at tx_time: Doppler (Hz) and DL amplitude.
+// Pass time: extrapolated from the last clock synchronization and looped over
+// [-vis/2, +vis/2). No Doppler before the first transmitted subframe.
+// Pass time of radio-clock time t_radio; false before the first transmitted subframe and in calibration
+static bool ntn_pass_time(double t_radio, double& pass_t)
+{
+  using namespace std::chrono;
+  double ref_experiment_time, ref_wall_sec;
+  {
+    std::lock_guard<std::mutex> lock(experiment_times_mutex);
+    ref_experiment_time = experiment_times.experiment_time;
+    ref_wall_sec        = experiment_times.start_time;
+  }
+  // On-air time on the wall clock; wall clock now until the first subframe is received
+  double now_sec;
+  double radio_to_wall = g_radio_to_wall.load();
+  if (radio_to_wall != 0.0) {
+    now_sec = t_radio + radio_to_wall;
+  } else {
+    now_sec = duration_cast<duration<double>>(system_clock::now().time_since_epoch()).count();
+  }
+  if (g_calibration.load() || !g_tx_started.load()) return false;
+  double real = now_sec - ref_wall_sec + ref_experiment_time;
+  pass_t = g_pass_start_offset + std::fmod(real - g_pass_start_offset, g_vis_time);
+  if (pass_t < g_pass_start_offset) pass_t += g_vis_time;
+  return true;
+}
+
+static void ntn_dl_at(const srslte_timestamp_t& tx_time, double& doppler, double& amp)
+{
+  doppler = 0.0;
+  amp     = 1.0;  // QEF beam gain, 1 otherwise
+  double pass_t;
+  // Calibration: constant Doppler; otherwise the Doppler of the pass
+  if (g_calibration.load()) {
+    doppler = g_calibration_doppler_hz.load();
+  } else if (ntn_pass_time(tx_time.full_secs + tx_time.frac_secs, pass_t)) {
+    if (qef_model) {  // interpolated between table rows, as in the OAI gNB
+      doppler = sonica_enb::doppler_shift::qef_at(doppler_table, pass_t);
+      if (!qef_amp_table.empty())
+        amp = sonica_enb::doppler_shift::qef_at(qef_amp_table, pass_t);
+    } else {
+      doppler = sonica_enb::doppler_shift::get_precomputed_doppler(doppler_table, g_pass_start_offset, 0.1, pass_t);
+    }
+  }
+}
+
+// Last (DL TX tti, its on-air radio time), set by the main loop, read by RRC for SIB31-NB
+static std::mutex ntn_tx_snap_mutex;
+static uint32_t   ntn_tx_snap_tti = 0;
+static double     ntn_tx_snap_t   = -1.0;
+
+bool sonica_enb::ntn_sat_state_at(uint32_t tti_tx, double pos[3], double vel[3])
+{
+  uint32_t snap_tti;
+  double   snap_t;
+  {
+    std::lock_guard<std::mutex> lock(ntn_tx_snap_mutex);
+    snap_tti = ntn_tx_snap_tti;
+    snap_t   = ntn_tx_snap_t;
+  }
+  if (qef_sat_table[0].empty()) {  // no QEF table (Doppler model 0)
+    for (int k = 0; k < 3; k++) pos[k] = vel[k] = 0.0;
+    return false;
+  }
+  // tti_tx is at most one SFN cycle (10.24 s) after the snapshot
+  double pass_t = qef_t0;
+  bool   ok = snap_t >= 0.0 && ntn_pass_time(snap_t + ((tti_tx + 10240 - snap_tti) % 10240) * 1e-3, pass_t);
+  for (int k = 0; k < 3; k++) {
+    pos[k] = sonica_enb::doppler_shift::qef_at(qef_sat_table[k], pass_t);
+    vel[k] = sonica_enb::doppler_shift::qef_at(qef_sat_table[k + 3], pass_t);
+  }
+  return ok;
+}
+
 #define Error(fmt, ...)                                                                                                \
   if (SRSLTE_DEBUG_ENABLED)                                                                                            \
   log_h->error(fmt, ##__VA_ARGS__)
@@ -361,9 +436,14 @@ void txrx::run_thread()
   if (!server_connect.load()) {
     std::cerr << "WARNING: clock server not connected -- UEs will not be time-aligned." << std::endl;
   }
-  // Doppler table over the whole pass [-vis/2, +vis/2]
-  doppler_table = ds.doppler_shift::precompute_doppler(maxElevation, offset, visibility_time/2, 0.1);
+  // Quasi-earth-fixed ("Doppler model = 1"): residual Doppler and beam gain from the QEF table;
+  // otherwise the earth-moving Doppler table over the whole pass [-vis/2, +vis/2]
+  qef_model = doppler_shift::load_qef(carrierFrequency);
+  if (!qef_model)
+    doppler_table = ds.doppler_shift::precompute_doppler(maxElevation, offset, visibility_time/2, 0.1);
 
+
+  double ntn_phase = 0.0, ntn_t_prev = -1.0, ntn_f_prev = 0.0;  // NTN carrier phase state (main loop only)
 
   // Main loop
   while (running) {
@@ -411,6 +491,23 @@ void txrx::run_thread()
             worker->get_id());
 
       worker->set_time(tx_hfn, tti, tx_worker_cnt, tx_time);
+      {
+        std::lock_guard<std::mutex> lock(ntn_tx_snap_mutex);
+        ntn_tx_snap_tti = TTI_ADD(tti, FDD_HARQ_DELAY_UL_MS);  // as sf_worker tti_tx_dl, paired with tx_time
+        ntn_tx_snap_t   = tx_time.full_secs + tx_time.frac_secs;
+      }
+      // Carrier phase = integral of the Doppler over the radio clock, carried from the previous subframe so
+      // the shifted signal stays phase-continuous when the Doppler changes (and across skipped subframes)
+      {
+        double doppler, amp;
+        ntn_dl_at(tx_time, doppler, amp);
+        const double t = tx_time.full_secs + tx_time.frac_secs;
+        if (ntn_t_prev >= 0.0)
+          ntn_phase = std::fmod(ntn_phase + 2.0 * M_PI * ntn_f_prev * (t - ntn_t_prev), 2.0 * M_PI);
+        ntn_t_prev = t;
+        ntn_f_prev = doppler;
+        worker->set_ntn(static_cast<float>(doppler), static_cast<float>(amp), ntn_phase);
+      }
       tx_worker_cnt = (tx_worker_cnt + 1) % nof_workers;
 
       // Trigger phy worker execution

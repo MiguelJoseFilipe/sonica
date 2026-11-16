@@ -26,6 +26,8 @@
 
 namespace sonica_enb {
 
+uint32_t g_sib31_si_tb = 0;
+
 /*******************************************************
  *        Broadcast (SIB+Paging) scheduling
  *******************************************************/
@@ -68,6 +70,18 @@ bc_sched::bc_sched() : log_h(srslte::logmap::get("MAC"))
   // TODO: Set MCS and SF according to TBS configuration in RRC
   ra_dl_sib2.mcs_idx        = 3;
   sib2_num_sf               = 8;
+
+  // SI #2 (SIB31-NB): 8 subframes, I_TBS giving the SIB1-configured TBS (TS 36.213 Table 16.4.1.5.1-1)
+  ra_dl_si2 = ra_dl_sib2;
+  if (g_sib31_si_tb) {
+    ra_dl_si2.mcs_idx = 0;
+    while (ra_dl_si2.mcs_idx < 12 &&
+           srslte_ra_nbiot_get_npdsch_tbs(ra_dl_si2.mcs_idx, ra_dl_si2.alloc.i_sf) != (int)g_sib31_si_tb) {
+      ra_dl_si2.mcs_idx++;
+    }
+    printf("[SIB31] SI #2: SFN 16..31 of every 512, I_TBS %d, TBS %d (SIB1 si-TB %u)\n", ra_dl_si2.mcs_idx,
+           srslte_ra_nbiot_get_npdsch_tbs(ra_dl_si2.mcs_idx, ra_dl_si2.alloc.i_sf), g_sib31_si_tb);
+  }
 }
 
 void bc_sched::dl_sched(uint32_t hfn, sf_sched* tti_sched)
@@ -141,7 +155,9 @@ void bc_sched::alloc_sibs(uint32_t hfn, sf_sched* tti_sched)
     }
   } else if (sf_idx != 0 && sf_idx != 5 && !(sf_idx == 9 && sfn % 2 == 0)) {
     // Check SIB2 TTI
-    if (sf_idx == 1 && sfn % 512 < 16 && sfn % 4 == 0) {
+    // SI #1 (SIB2, SIB3) in frames 0..15 and SI #2 (SIB31-NB) in 16..31 of every 512
+    const bool si2 = g_sib31_si_tb && sfn % 512 >= 16 && sfn % 512 < 32;
+    if (sf_idx == 1 && (sfn % 512 < 16 || si2) && sfn % 4 == 0) {
 
       // Check the sched table
       if (tti_sched->dl_sched_table[current_tti]) {
@@ -164,7 +180,8 @@ void bc_sched::alloc_sibs(uint32_t hfn, sf_sched* tti_sched)
       }
 
       sf_sched::bc_alloc_t bc_alloc{};
-      bc_alloc.dci = ra_dl_sib2;
+      bc_alloc.dci     = si2 ? ra_dl_si2 : ra_dl_sib2;
+      bc_alloc.sib_idx = si2 ? 1 : 0;
       bc_alloc.alloc_type = alloc_type_t::DL_BC;
       tti_sched->bc_allocs.emplace_back(bc_alloc);
     }
