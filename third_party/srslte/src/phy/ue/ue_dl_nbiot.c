@@ -424,14 +424,15 @@ void srslte_nbiot_ue_dl_decode_sib(srslte_nbiot_ue_dl_t*    q,
     return;
   }
 
-  if (type == SRSLTE_NBIOT_SI_TYPE_SIB2) {
-    assert(params.n == 1);
-    // calculate SIB2 params
+  if (type == SRSLTE_NBIOT_SI_TYPE_SIB2 || type == SRSLTE_NBIOT_SI_TYPE_SIB31) {
+    // SIB2-NB is always in the first SI message; SIB31-NB in the SI message n given by SIB1-NB-v1530
+    assert(params.n >= 1 && (type != SRSLTE_NBIOT_SI_TYPE_SIB2 || params.n == 1));
     srslte_ra_nbiot_dl_grant_t grant;
     srslte_nbiot_ue_dl_get_sib_grant(q, hfn, sfn, params, &grant);
     srslte_nbiot_ue_dl_set_grant(q, &grant);
-    INFO("%d.x: Activated SIB2 reception in hfn=%d, sfn=%d\n",
+    INFO("%d.x: Activated SI message %d reception in hfn=%d, sfn=%d\n",
          sfn,
+         params.n,
          q->npdsch_cfg.grant.start_hfn,
          q->npdsch_cfg.grant.start_sfn);
   } else {

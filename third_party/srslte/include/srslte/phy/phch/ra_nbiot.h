@@ -58,6 +58,7 @@ typedef enum SRSLTE_API {
   SRSLTE_NBIOT_SI_TYPE_SIB5,    ///< Neighboring cell related information relevant for inter-frequency cell re-selection
   SRSLTE_NBIOT_SI_TYPE_SIB14,   ///< Access Barring parameters
   SRSLTE_NBIOT_SI_TYPE_SIB16,   ///< Information related to GPS time and Coordinated Universal Time (UTC)
+  SRSLTE_NBIOT_SI_TYPE_SIB31,   ///< Satellite assistance information (NTN, Rel-17)
   SRSLTE_NBIOT_SI_TYPE_NITEMS
 } srslte_nbiot_si_type_t;
 

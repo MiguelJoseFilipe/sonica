@@ -97,6 +97,7 @@ protected:
   sonica_enb_ul_nbiot_t  enb_ul;
 
   srslte_nbiot_si_params_t sib2_params;
+  srslte_nbiot_si_params_t sib31_params; // n = 0: no SIB31-NB scheduled
 
   uint32_t system_frame_number;
   uint32_t hyper_frame_number;
@@ -118,6 +119,7 @@ private:
 
   bool have_sib1;
   bool have_sib2;
+  bool have_sib31;
 
   srslte_rf_t rf;
 

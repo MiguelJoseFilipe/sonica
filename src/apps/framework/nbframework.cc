@@ -35,9 +35,13 @@
 
 #include "srslte/asn1/rrc_asn1_nbiot.h"
 
-int get_sib2_params(const uint8_t* sib1_payload, const uint32_t len, srslte_nbiot_si_params_t* sib2_params)
+int get_sib2_params(const uint8_t*            sib1_payload,
+                    const uint32_t            len,
+                    srslte_nbiot_si_params_t* sib2_params,
+                    srslte_nbiot_si_params_t* sib31_params)
 {
   memset(sib2_params, 0, sizeof(srslte_nbiot_si_params_t));
+  memset(sib31_params, 0, sizeof(srslte_nbiot_si_params_t));
 
   // unpack SIB
   asn1::rrc::bcch_dl_sch_msg_nb_s dlsch_msg;
@@ -49,17 +53,81 @@ int get_sib2_params(const uint8_t* sib1_payload, const uint32_t len, srslte_nbio
   }
 
   // set SIB2-NB parameters
+  const asn1::rrc::sib_type1_nb_s& sib1 = dlsch_msg.msg.c1().sib_type1_r13();
   sib2_params->n              = 1;
-  auto sched_info             = dlsch_msg.msg.c1().sib_type1_r13().sched_info_list_r13.begin();
+  auto sched_info             = sib1.sched_info_list_r13.begin();
   sib2_params->si_periodicity = sched_info->si_periodicity_r13.to_number();
-  if (dlsch_msg.msg.c1().sib_type1_r13().si_radio_frame_offset_r13_present) {
-    sib2_params->si_radio_frame_offset = dlsch_msg.msg.c1().sib_type1_r13().si_radio_frame_offset_r13;
+  if (sib1.si_radio_frame_offset_r13_present) {
+    sib2_params->si_radio_frame_offset = sib1.si_radio_frame_offset_r13;
   }
   sib2_params->si_repetition_pattern = sched_info->si_repeat_pattern_r13.to_number();
   sib2_params->si_tb                 = sched_info->si_tb_r13.to_number();
-  sib2_params->si_window_length      = dlsch_msg.msg.c1().sib_type1_r13().si_win_len_r13.to_number();
+  sib2_params->si_window_length      = sib1.si_win_len_r13.to_number();
+
+  // SIB31-NB (NTN): SI message n whose SIB1-NB-v1530 schedulingInfoList-v1530 entry n lists sibType31-NB-r17
+  const auto& v1530 = sib1.non_crit_ext.non_crit_ext.non_crit_ext.non_crit_ext;
+  if (sib1.non_crit_ext_present && sib1.non_crit_ext.non_crit_ext_present &&
+      sib1.non_crit_ext.non_crit_ext.non_crit_ext_present &&
+      sib1.non_crit_ext.non_crit_ext.non_crit_ext.non_crit_ext_present && v1530.sched_info_list_v1530_present) {
+    for (uint32_t i = 0; i < v1530.sched_info_list_v1530.size() && i < sib1.sched_info_list_r13.size(); i++) {
+      const auto& e = v1530.sched_info_list_v1530[i];
+      for (uint32_t k = 0; e.sib_map_info_v1530_present && k < e.sib_map_info_v1530.size(); k++) {
+        if (e.sib_map_info_v1530[k] == asn1::rrc::sib_type_nb_v1530_opts::sib_type31_nb_r17) {
+          *sib31_params                       = *sib2_params;
+          sib31_params->n                     = i + 1;
+          sib31_params->si_periodicity        = sib1.sched_info_list_r13[i].si_periodicity_r13.to_number();
+          sib31_params->si_repetition_pattern = sib1.sched_info_list_r13[i].si_repeat_pattern_r13.to_number();
+          sib31_params->si_tb                 = sib1.sched_info_list_r13[i].si_tb_r13.to_number();
+        }
+      }
+    }
+  }
+  if (sib1.cell_access_related_info_r13.cell_barred_r13.value ==
+      asn1::rrc::sib_type1_nb_s::cell_access_related_info_r13_s_::cell_barred_r13_opts::barred) {
+    printf("SIB1: cell barred for legacy UEs%s\n", sib31_params->n ? " (NTN cell)" : "");
+  }
+  if (sib31_params->n) {
+    printf("SIB1: SIB31-NB in SI message %d (TBS %d)\n", sib31_params->n, sib31_params->si_tb);
+  }
 
   return SRSLTE_SUCCESS;
+}
+
+// Prints the SIB31-NB of an SI message: satellite ECEF state vectors (m, m/s) and their epoch
+static int print_sib31(const uint8_t* payload, const uint32_t len)
+{
+  using namespace asn1::rrc;
+  bcch_dl_sch_msg_nb_s msg;
+  asn1::cbit_ref       bref(payload, len);
+  if (msg.unpack(bref) != asn1::SRSASN_SUCCESS || msg.msg.type().value != bcch_dl_sch_msg_type_nb_c::types::c1 ||
+      msg.msg.c1().type().value != bcch_dl_sch_msg_type_nb_c::c1_c_::types::sys_info_r13 ||
+      msg.msg.c1().sys_info_r13().crit_exts.type().value != sys_info_nb_s::crit_exts_c_::types::sys_info_r13) {
+    printf("SIB31: SI message unpack error\n");
+    return SRSLTE_ERROR;
+  }
+  for (const auto& it : msg.msg.c1().sys_info_r13().crit_exts.sys_info_r13().sib_type_and_info_r13) {
+    if (it.type().value != sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::types::sib31_v1700) {
+      continue;
+    }
+    const serving_satellite_info_r17_s& s = it.sib31_v1700().serving_satellite_info_r17;
+    if (s.ephemeris_info_r17.type().value == serving_satellite_info_r17_s::ephemeris_info_r17_c_::types::state_vectors) {
+      const ephemeris_state_vectors_r17_s& v = s.ephemeris_info_r17.state_vectors;
+      printf("SIB31 received: pos %.1f %.1f %.1f m, vel %.2f %.2f %.2f m/s",
+             v.pos_x_r17 * 1.3, v.pos_y_r17 * 1.3, v.pos_z_r17 * 1.3,
+             v.velocity_vx_r17 * 0.06, v.velocity_vy_r17 * 0.06, v.velocity_vz_r17 * 0.06);
+    } else {
+      printf("SIB31 received: orbital parameters");
+    }
+    if (s.epoch_time_r17_present) {
+      printf(", epoch SFN %d.%d", s.epoch_time_r17.start_sfn_r17, s.epoch_time_r17.start_sub_frame_r17);
+    } else {
+      printf(", epoch end of SI window");
+    }
+    printf(", ul-SyncValidityDuration %d s, k-Offset %d ms\n", s.ul_sync_validity_dur_r17.to_number(), s.k_offset_r17);
+    return SRSLTE_SUCCESS;
+  }
+  printf("SIB31: no SIB31-NB in the SI message\n");
+  return SRSLTE_ERROR;
 }
 
 NBFramework::NBFramework()
@@ -72,7 +140,8 @@ NBFramework::NBFramework()
   txport_map[1] = DL_FREQ;
 
   have_sib1 = false;
-  have_sib2 = false;
+  have_sib2  = false;
+  have_sib31 = false;
 
   first_xmit = true;
   xmit_enable = false;
@@ -438,7 +507,7 @@ void NBFramework::run()
               have_sib1 = true;
 
               // Decode SIB1 and extract SIB2 scheduling params
-              get_sib2_params(rx_tb, ue_dl.npdsch_cfg.grant.mcs[0].tbs / 8, &sib2_params);
+              get_sib2_params(rx_tb, ue_dl.npdsch_cfg.grant.mcs[0].tbs / 8, &sib2_params, &sib31_params);
 
               // Activate SIB2 decoding
               srslte_nbiot_ue_dl_decode_sib(
@@ -473,7 +542,7 @@ void NBFramework::run()
                                                            SRSLTE_SIRNTI);
             if (dec_ret == SRSLTE_SUCCESS) {
               printf("SIB2 received\n");
-              have_sib2 = true;
+              have_sib2 = true; // the SIB31-NB branch below activates its SI message once the grant is free
 
 #if HAVE_PCAP
               pcap_pack_and_write(pcap_file,
@@ -493,9 +562,26 @@ void NBFramework::run()
                     &ue_dl, hyper_frame_number, system_frame_number, SRSLTE_NBIOT_SI_TYPE_SIB2, sib2_params);
               }
             }
+          } else if (have_sib2 && sib31_params.n && !have_sib31 &&
+                     !srslte_nbiot_ue_dl_is_sib1_sf(
+                         &ue_dl, system_frame_number, srslte_ue_sync_nbiot_get_sfidx(&ue_sync))) {
+            // SI message carrying SIB31-NB, over multiple subframes as SIB2
+            int dec_ret = srslte_nbiot_ue_dl_decode_npdsch(&ue_dl,
+                                                           buff_ptrs[0],
+                                                           rx_tb,
+                                                           system_frame_number,
+                                                           srslte_ue_sync_nbiot_get_sfidx(&ue_sync),
+                                                           SRSLTE_SIRNTI);
+            if (dec_ret == SRSLTE_SUCCESS) {
+              have_sib31 = print_sib31(rx_tb, sib31_params.si_tb / 8) == SRSLTE_SUCCESS;
+            }
+            if (!have_sib31 && srslte_nbiot_ue_dl_has_grant(&ue_dl) == false) {
+              srslte_nbiot_ue_dl_decode_sib(
+                  &ue_dl, hyper_frame_number, system_frame_number, SRSLTE_NBIOT_SI_TYPE_SIB31, sib31_params);
+            }
           }
 
-          if (have_sib1 && (have_sib2 || args.skip_sib2)) {
+          if (have_sib1 && ((have_sib2 && (have_sib31 || !sib31_params.n)) || args.skip_sib2)) {
             if (args.rnti == SRSLTE_SIRNTI) {
               srslte_nbiot_ue_dl_decode_sib1(&ue_dl, system_frame_number);
             }
