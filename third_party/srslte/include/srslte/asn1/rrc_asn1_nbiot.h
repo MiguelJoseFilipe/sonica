@@ -2181,7 +2181,17 @@ struct ns_pmax_value_nb_r13_s {
 
 // SIB-Type-NB-v1530 ::= ENUMERATED
 struct sib_type_nb_v1530_opts {
-  enum options { sib_type23_nb_r15, spare7, spare6, spare5, spare4, spare3, spare2, spare1, nulltype } value;
+  enum options {
+    sib_type23_nb_r15,
+    sib_type27_nb_r16,
+    sib_type31_nb_r17,
+    sib_type32_nb_r17,
+    spare4,
+    spare3,
+    spare2,
+    spare1,
+    nulltype
+  } value;
   typedef uint8_t number_type;
 
   std::string to_string() const;
@@ -3780,6 +3790,48 @@ struct sib_type_nb_r13_opts {
 };
 typedef enumerated<sib_type_nb_r13_opts> sib_type_nb_r13_e;
 
+// ----- Rel-17 NTN additions (TS 36.331 V17.16.0), hand-written in the srsLTE style for Sonica ----- //
+
+// SystemInformationBlockType1-NB-v1700 ::= SEQUENCE
+struct sib_type1_nb_v1700_s {
+  struct cell_access_related_info_ntn_r17_s_ {
+    struct cell_barred_ntn_r17_opts {
+      enum options { barred, not_barred, nulltype } value;
+
+      std::string to_string() const;
+    };
+    typedef enumerated<cell_barred_ntn_r17_opts> cell_barred_ntn_r17_e_;
+
+    // shortcut: PLMN-IdentityList-NB-v1700 (per-PLMN tracking area lists) not implemented; pack/unpack
+    // refuse it, add it if a cell must broadcast several TACs
+    bool                   plmn_id_list_v1700_present = false;
+    cell_barred_ntn_r17_e_ cell_barred_ntn_r17;
+  };
+
+  // member variables
+  bool                                cell_access_related_info_ntn_r17_present = false;
+  bool                                non_crit_ext_present                     = false;
+  cell_access_related_info_ntn_r17_s_ cell_access_related_info_ntn_r17;
+
+  // sequence methods
+  SRSASN_CODE pack(bit_ref& bref) const;
+  SRSASN_CODE unpack(cbit_ref& bref);
+  void        to_json(json_writer& j) const;
+};
+
+// SystemInformationBlockType1-NB-v1610 ::= SEQUENCE
+struct sib_type1_nb_v1610_s {
+  // shortcut: cellAccessRelatedInfo-5GC-r16 not implemented; pack/unpack refuse it (5GC-connected cells only)
+  bool                 cell_access_related_info_5gc_r16_present = false;
+  bool                 non_crit_ext_present                     = false;
+  sib_type1_nb_v1700_s non_crit_ext;
+
+  // sequence methods
+  SRSASN_CODE pack(bit_ref& bref) const;
+  SRSASN_CODE unpack(cbit_ref& bref);
+  void        to_json(json_writer& j) const;
+};
+
 // SystemInformationBlockType1-NB-v1530 ::= SEQUENCE
 struct sib_type1_nb_v1530_s {
   struct tdd_params_r15_s_ {
@@ -3803,6 +3855,7 @@ struct sib_type1_nb_v1530_s {
   bool                       non_crit_ext_present          = false;
   tdd_params_r15_s_          tdd_params_r15;
   sched_info_list_nb_v1530_l sched_info_list_v1530;
+  sib_type1_nb_v1610_s       non_crit_ext;
 
   // sequence methods
   SRSASN_CODE pack(bit_ref& bref) const;
@@ -5147,6 +5200,122 @@ using sched_info_list_nb_r13_l = dyn_array<sched_info_nb_r13_s>;
 using sys_info_value_tag_list_nb_r13_l = bounded_array<uint8_t, 8>;
 
 // SystemInformation-NB-r13-IEs ::= SEQUENCE
+// EphemerisStateVectors-r17 ::= SEQUENCE
+struct ephemeris_state_vectors_r17_s {
+  // PositionStateVector-r17 ::= INTEGER (-33554432..33554431), step 1.3 m
+  int32_t pos_x_r17 = 0;
+  int32_t pos_y_r17 = 0;
+  int32_t pos_z_r17 = 0;
+  // VelocityStateVector-r17 ::= INTEGER (-131072..131071), step 0.06 m/s
+  int32_t velocity_vx_r17 = 0;
+  int32_t velocity_vy_r17 = 0;
+  int32_t velocity_vz_r17 = 0;
+
+  // sequence methods
+  SRSASN_CODE pack(bit_ref& bref) const;
+  SRSASN_CODE unpack(cbit_ref& bref);
+  void        to_json(json_writer& j) const;
+};
+
+// EphemerisOrbitalParameters-r17 ::= SEQUENCE
+struct ephemeris_orbital_params_r17_s {
+  uint64_t semi_major_axis_r17 = 0; // INTEGER (0..8589934591)
+  uint32_t eccentricity_r17    = 0; // INTEGER (0..1048575)
+  uint32_t periapsis_r17       = 0; // INTEGER (0..268435455)
+  uint32_t longitude_r17       = 0; // INTEGER (0..268435455)
+  int32_t  inclination_r17     = 0; // INTEGER (-67108864..67108863)
+  uint32_t anomaly_r17         = 0; // INTEGER (0..268435455)
+
+  // sequence methods
+  SRSASN_CODE pack(bit_ref& bref) const;
+  SRSASN_CODE unpack(cbit_ref& bref);
+  void        to_json(json_writer& j) const;
+};
+
+// ServingSatelliteInfo-r17 ::= SEQUENCE
+struct serving_satellite_info_r17_s {
+  // ephemerisInfo-r17 ::= CHOICE {stateVectors, orbitalParameters}
+  struct ephemeris_info_r17_c_ {
+    struct types_opts {
+      enum options { state_vectors, orbital_params, nulltype } value;
+
+      std::string to_string() const;
+    };
+    typedef enumerated<types_opts> types;
+
+    types                           type() const { return type_; }
+    ephemeris_state_vectors_r17_s&  set_state_vectors()
+    {
+      type_ = types::state_vectors;
+      return state_vectors;
+    }
+    ephemeris_orbital_params_r17_s& set_orbital_params()
+    {
+      type_ = types::orbital_params;
+      return orbital_params;
+    }
+    SRSASN_CODE pack(bit_ref& bref) const;
+    SRSASN_CODE unpack(cbit_ref& bref);
+    void        to_json(json_writer& j) const;
+
+    // shortcut: both alternatives stored side by side (type() selects one) instead of a choice_buffer_t
+    types                          type_;
+    ephemeris_state_vectors_r17_s  state_vectors;
+    ephemeris_orbital_params_r17_s orbital_params;
+  };
+  struct nta_common_params_r17_s_ {
+    bool     nta_common_r17_present                 = false;
+    bool     nta_common_drift_r17_present           = false;
+    bool     nta_common_drift_variation_r17_present = false;
+    uint32_t nta_common_r17                         = 0; // INTEGER (0..8316827)
+    int32_t  nta_common_drift_r17                   = 0; // INTEGER (-261935..261935)
+    uint16_t nta_common_drift_variation_r17         = 0; // INTEGER (0..29479)
+  };
+  struct ul_sync_validity_dur_r17_opts {
+    enum options { s5, s10, s15, s20, s25, s30, s35, s40, s45, s50, s55, s60, s120, s180, s240, s900, nulltype } value;
+    typedef uint16_t number_type;
+
+    std::string to_string() const;
+    uint16_t    to_number() const;
+  };
+  typedef enumerated<ul_sync_validity_dur_r17_opts> ul_sync_validity_dur_r17_e_;
+  struct epoch_time_r17_s_ {
+    uint16_t start_sfn_r17       = 0; // INTEGER (0..1023)
+    uint8_t  start_sub_frame_r17 = 0; // INTEGER (0..9)
+  };
+
+  // member variables
+  bool                        ext                    = false;
+  bool                        epoch_time_r17_present = false;
+  bool                        k_mac_r17_present      = false;
+  ephemeris_info_r17_c_       ephemeris_info_r17;
+  nta_common_params_r17_s_    nta_common_params_r17;
+  ul_sync_validity_dur_r17_e_ ul_sync_validity_dur_r17;
+  epoch_time_r17_s_           epoch_time_r17;
+  uint16_t                    k_offset_r17 = 0; // INTEGER (0..1023)
+  uint16_t                    k_mac_r17    = 1; // INTEGER (1..512)
+  // ...
+
+  // sequence methods
+  SRSASN_CODE pack(bit_ref& bref) const;
+  SRSASN_CODE unpack(cbit_ref& bref);
+  void        to_json(json_writer& j) const;
+};
+
+// SystemInformationBlockType31-NB-r17 ::= SEQUENCE
+struct sib_type31_nb_r17_s {
+  bool                         ext                       = false;
+  bool                         late_non_crit_ext_present = false;
+  serving_satellite_info_r17_s serving_satellite_info_r17;
+  dyn_octstring                late_non_crit_ext;
+  // ...
+
+  // sequence methods
+  SRSASN_CODE pack(bit_ref& bref) const;
+  SRSASN_CODE unpack(cbit_ref& bref);
+  void        to_json(json_writer& j) const;
+};
+
 struct sys_info_nb_r13_ies_s {
   struct sib_type_and_info_r13_item_c_ {
     struct types_opts {
@@ -5162,6 +5331,9 @@ struct sys_info_nb_r13_ies_s {
         sib20_v1430,
         sib22_v1430,
         sib23_v1530,
+        sib27_v1610,
+        sib31_v1700,
+        sib32_v1700,
         nulltype
       } value;
       typedef uint8_t number_type;
@@ -5169,7 +5341,7 @@ struct sys_info_nb_r13_ies_s {
       std::string to_string() const;
       uint8_t     to_number() const;
     };
-    typedef enumerated<types_opts, true, 4> types;
+    typedef enumerated<types_opts, true, 7> types;
 
     // choice methods
     sib_type_and_info_r13_item_c_() = default;
@@ -5282,6 +5454,33 @@ struct sys_info_nb_r13_ies_s {
       assert_choice_type("sib23-v1530", type_.to_string(), "sib-TypeAndInfo-r13-item");
       return c.get<sib_type23_nb_r15_s>();
     }
+    // shortcut: SIB27-NB and SIB32-NB are kept as their encoded value (open type octets), not decoded;
+    // they are here so that SIB31-NB gets its extension index
+    const dyn_octstring& sib27_v1610() const
+    {
+      assert_choice_type("sib27-v1610", type_.to_string(), "sib-TypeAndInfo-r13-item");
+      return c.get<dyn_octstring>();
+    }
+    sib_type31_nb_r17_s& sib31_v1700()
+    {
+      assert_choice_type("sib31-v1700", type_.to_string(), "sib-TypeAndInfo-r13-item");
+      return c.get<sib_type31_nb_r17_s>();
+    }
+    const sib_type31_nb_r17_s& sib31_v1700() const
+    {
+      assert_choice_type("sib31-v1700", type_.to_string(), "sib-TypeAndInfo-r13-item");
+      return c.get<sib_type31_nb_r17_s>();
+    }
+    const dyn_octstring& sib32_v1700() const
+    {
+      assert_choice_type("sib32-v1700", type_.to_string(), "sib-TypeAndInfo-r13-item");
+      return c.get<dyn_octstring>();
+    }
+    sib_type31_nb_r17_s& set_sib31_v1700()
+    {
+      set(types::sib31_v1700);
+      return c.get<sib_type31_nb_r17_s>();
+    }
     sib_type2_nb_r13_s& set_sib2_r13()
     {
       set(types::sib2_r13);
@@ -5335,13 +5534,15 @@ struct sys_info_nb_r13_ies_s {
 
   private:
     types type_;
-    choice_buffer_t<sib_type14_nb_r13_s,
+    choice_buffer_t<dyn_octstring,
+                    sib_type14_nb_r13_s,
                     sib_type15_nb_r14_s,
                     sib_type16_nb_r13_s,
                     sib_type20_nb_r14_s,
                     sib_type22_nb_r14_s,
                     sib_type23_nb_r15_s,
                     sib_type2_nb_r13_s,
+                    sib_type31_nb_r17_s,
                     sib_type3_nb_r13_s,
                     sib_type4_nb_r13_s,
                     sib_type5_nb_r13_s>

@@ -4393,13 +4393,13 @@ void ns_pmax_value_nb_r13_s::to_json(json_writer& j) const
 std::string sib_type_nb_v1530_opts::to_string() const
 {
   static const char* options[] = {
-      "sibType23-NB-r15", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
+      "sibType23-NB-r15", "sibType27-NB-r16", "sibType31-NB-r17", "sibType32-NB-r17", "spare4", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "sib_type_nb_v1530_e");
 }
 uint8_t sib_type_nb_v1530_opts::to_number() const
 {
-  static const uint8_t options[] = {23};
-  return map_enum_number(options, 1, value, "sib_type_nb_v1530_e");
+  static const uint8_t options[] = {23, 27, 31, 32};
+  return map_enum_number(options, 4, value, "sib_type_nb_v1530_e");
 }
 
 // NSSS-RRM-Config-NB-r15 ::= SEQUENCE
@@ -7638,6 +7638,9 @@ SRSASN_CODE sib_type1_nb_v1530_s::pack(bit_ref& bref) const
   if (sched_info_list_v1530_present) {
     HANDLE_CODE(pack_dyn_seq_of(bref, sched_info_list_v1530, 1, 8));
   }
+  if (non_crit_ext_present) {
+    HANDLE_CODE(non_crit_ext.pack(bref));
+  }
 
   return SRSASN_SUCCESS;
 }
@@ -7657,6 +7660,9 @@ SRSASN_CODE sib_type1_nb_v1530_s::unpack(cbit_ref& bref)
   }
   if (sched_info_list_v1530_present) {
     HANDLE_CODE(unpack_dyn_seq_of(sched_info_list_v1530, bref, 1, 8));
+  }
+  if (non_crit_ext_present) {
+    HANDLE_CODE(non_crit_ext.unpack(bref));
   }
 
   return SRSASN_SUCCESS;
@@ -7685,10 +7691,95 @@ void sib_type1_nb_v1530_s::to_json(json_writer& j) const
   }
   if (non_crit_ext_present) {
     j.write_fieldname("nonCriticalExtension");
+    non_crit_ext.to_json(j);
+  }
+  j.end_obj();
+}
+
+// SystemInformationBlockType1-NB-v1610 ::= SEQUENCE
+SRSASN_CODE sib_type1_nb_v1610_s::pack(bit_ref& bref) const
+{
+  if (cell_access_related_info_5gc_r16_present) {
+    return SRSASN_ERROR_ENCODE_FAIL; // not implemented, see the header
+  }
+  HANDLE_CODE(bref.pack(cell_access_related_info_5gc_r16_present, 1));
+  HANDLE_CODE(bref.pack(non_crit_ext_present, 1));
+  if (non_crit_ext_present) {
+    HANDLE_CODE(non_crit_ext.pack(bref));
+  }
+  return SRSASN_SUCCESS;
+}
+SRSASN_CODE sib_type1_nb_v1610_s::unpack(cbit_ref& bref)
+{
+  HANDLE_CODE(bref.unpack(cell_access_related_info_5gc_r16_present, 1));
+  HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
+  if (cell_access_related_info_5gc_r16_present) {
+    return SRSASN_ERROR_DECODE_FAIL; // not implemented, see the header
+  }
+  if (non_crit_ext_present) {
+    HANDLE_CODE(non_crit_ext.unpack(bref));
+  }
+  return SRSASN_SUCCESS;
+}
+void sib_type1_nb_v1610_s::to_json(json_writer& j) const
+{
+  j.start_obj();
+  if (non_crit_ext_present) {
+    j.write_fieldname("nonCriticalExtension");
+    non_crit_ext.to_json(j);
+  }
+  j.end_obj();
+}
+
+// SystemInformationBlockType1-NB-v1700 ::= SEQUENCE
+SRSASN_CODE sib_type1_nb_v1700_s::pack(bit_ref& bref) const
+{
+  HANDLE_CODE(bref.pack(cell_access_related_info_ntn_r17_present, 1));
+  HANDLE_CODE(bref.pack(non_crit_ext_present, 1));
+  if (cell_access_related_info_ntn_r17_present) {
+    if (cell_access_related_info_ntn_r17.plmn_id_list_v1700_present) {
+      return SRSASN_ERROR_ENCODE_FAIL; // not implemented, see the header
+    }
+    HANDLE_CODE(bref.pack(cell_access_related_info_ntn_r17.plmn_id_list_v1700_present, 1));
+    HANDLE_CODE(cell_access_related_info_ntn_r17.cell_barred_ntn_r17.pack(bref));
+  }
+  // nonCriticalExtension SEQUENCE {}: no content
+  return SRSASN_SUCCESS;
+}
+SRSASN_CODE sib_type1_nb_v1700_s::unpack(cbit_ref& bref)
+{
+  HANDLE_CODE(bref.unpack(cell_access_related_info_ntn_r17_present, 1));
+  HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
+  if (cell_access_related_info_ntn_r17_present) {
+    HANDLE_CODE(bref.unpack(cell_access_related_info_ntn_r17.plmn_id_list_v1700_present, 1));
+    HANDLE_CODE(cell_access_related_info_ntn_r17.cell_barred_ntn_r17.unpack(bref));
+    if (cell_access_related_info_ntn_r17.plmn_id_list_v1700_present) {
+      return SRSASN_ERROR_DECODE_FAIL; // not implemented, see the header
+    }
+  }
+  return SRSASN_SUCCESS;
+}
+void sib_type1_nb_v1700_s::to_json(json_writer& j) const
+{
+  j.start_obj();
+  if (cell_access_related_info_ntn_r17_present) {
+    j.write_fieldname("cellAccessRelatedInfo-NTN-r17");
+    j.start_obj();
+    j.write_str("cellBarred-NTN-r17", cell_access_related_info_ntn_r17.cell_barred_ntn_r17.to_string());
+    j.end_obj();
+  }
+  if (non_crit_ext_present) {
+    j.write_fieldname("nonCriticalExtension");
     j.start_obj();
     j.end_obj();
   }
   j.end_obj();
+}
+std::string sib_type1_nb_v1700_s::cell_access_related_info_ntn_r17_s_::cell_barred_ntn_r17_opts::to_string() const
+{
+  static const char* options[] = {"barred", "notBarred"};
+  return convert_enum_idx(
+      options, 2, value, "sib_type1_nb_v1700_s::cell_access_related_info_ntn_r17_s_::cell_barred_ntn_r17_e_");
 }
 
 std::string sib_type1_nb_v1530_s::tdd_params_r15_s_::tdd_si_carrier_info_r15_opts::to_string() const
@@ -10709,6 +10800,258 @@ void sib_type5_nb_r13_s::to_json(json_writer& j) const
 }
 
 // SystemInformation-NB-r13-IEs ::= SEQUENCE
+// EphemerisStateVectors-r17 ::= SEQUENCE
+SRSASN_CODE ephemeris_state_vectors_r17_s::pack(bit_ref& bref) const
+{
+  HANDLE_CODE(pack_integer(bref, pos_x_r17, (int32_t)-33554432, (int32_t)33554431));
+  HANDLE_CODE(pack_integer(bref, pos_y_r17, (int32_t)-33554432, (int32_t)33554431));
+  HANDLE_CODE(pack_integer(bref, pos_z_r17, (int32_t)-33554432, (int32_t)33554431));
+  HANDLE_CODE(pack_integer(bref, velocity_vx_r17, (int32_t)-131072, (int32_t)131071));
+  HANDLE_CODE(pack_integer(bref, velocity_vy_r17, (int32_t)-131072, (int32_t)131071));
+  HANDLE_CODE(pack_integer(bref, velocity_vz_r17, (int32_t)-131072, (int32_t)131071));
+  return SRSASN_SUCCESS;
+}
+SRSASN_CODE ephemeris_state_vectors_r17_s::unpack(cbit_ref& bref)
+{
+  HANDLE_CODE(unpack_integer(pos_x_r17, bref, (int32_t)-33554432, (int32_t)33554431));
+  HANDLE_CODE(unpack_integer(pos_y_r17, bref, (int32_t)-33554432, (int32_t)33554431));
+  HANDLE_CODE(unpack_integer(pos_z_r17, bref, (int32_t)-33554432, (int32_t)33554431));
+  HANDLE_CODE(unpack_integer(velocity_vx_r17, bref, (int32_t)-131072, (int32_t)131071));
+  HANDLE_CODE(unpack_integer(velocity_vy_r17, bref, (int32_t)-131072, (int32_t)131071));
+  HANDLE_CODE(unpack_integer(velocity_vz_r17, bref, (int32_t)-131072, (int32_t)131071));
+  return SRSASN_SUCCESS;
+}
+void ephemeris_state_vectors_r17_s::to_json(json_writer& j) const
+{
+  j.start_obj();
+  j.write_int("positionX-r17", pos_x_r17);
+  j.write_int("positionY-r17", pos_y_r17);
+  j.write_int("positionZ-r17", pos_z_r17);
+  j.write_int("velocityVX-r17", velocity_vx_r17);
+  j.write_int("velocityVY-r17", velocity_vy_r17);
+  j.write_int("velocityVZ-r17", velocity_vz_r17);
+  j.end_obj();
+}
+
+// EphemerisOrbitalParameters-r17 ::= SEQUENCE
+SRSASN_CODE ephemeris_orbital_params_r17_s::pack(bit_ref& bref) const
+{
+  // 33-bit field: bit_ref::pack() takes < 32 bits and pack_constrained_whole_number() drops its error,
+  // so the value (lb = 0, n_bits = 33) is written as 17 + 16 bits
+  if (semi_major_axis_r17 > 8589934591u) {
+    return SRSASN_ERROR_ENCODE_FAIL;
+  }
+  HANDLE_CODE(bref.pack((uint32_t)(semi_major_axis_r17 >> 16u), 17));
+  HANDLE_CODE(bref.pack((uint32_t)(semi_major_axis_r17 & 0xffffu), 16));
+  HANDLE_CODE(pack_integer(bref, eccentricity_r17, (uint32_t)0u, (uint32_t)1048575u));
+  HANDLE_CODE(pack_integer(bref, periapsis_r17, (uint32_t)0u, (uint32_t)268435455u));
+  HANDLE_CODE(pack_integer(bref, longitude_r17, (uint32_t)0u, (uint32_t)268435455u));
+  HANDLE_CODE(pack_integer(bref, inclination_r17, (int32_t)-67108864, (int32_t)67108863));
+  HANDLE_CODE(pack_integer(bref, anomaly_r17, (uint32_t)0u, (uint32_t)268435455u));
+  return SRSASN_SUCCESS;
+}
+SRSASN_CODE ephemeris_orbital_params_r17_s::unpack(cbit_ref& bref)
+{
+  uint32_t sma_hi = 0, sma_lo = 0; // 17 + 16 bits, see pack()
+  HANDLE_CODE(bref.unpack(sma_hi, 17));
+  HANDLE_CODE(bref.unpack(sma_lo, 16));
+  semi_major_axis_r17 = ((uint64_t)sma_hi << 16u) | sma_lo;
+  HANDLE_CODE(unpack_integer(eccentricity_r17, bref, (uint32_t)0u, (uint32_t)1048575u));
+  HANDLE_CODE(unpack_integer(periapsis_r17, bref, (uint32_t)0u, (uint32_t)268435455u));
+  HANDLE_CODE(unpack_integer(longitude_r17, bref, (uint32_t)0u, (uint32_t)268435455u));
+  HANDLE_CODE(unpack_integer(inclination_r17, bref, (int32_t)-67108864, (int32_t)67108863));
+  HANDLE_CODE(unpack_integer(anomaly_r17, bref, (uint32_t)0u, (uint32_t)268435455u));
+  return SRSASN_SUCCESS;
+}
+void ephemeris_orbital_params_r17_s::to_json(json_writer& j) const
+{
+  j.start_obj();
+  j.write_int("semiMajorAxis-r17", (int64_t)semi_major_axis_r17);
+  j.write_int("eccentricity-r17", eccentricity_r17);
+  j.write_int("periapsis-r17", periapsis_r17);
+  j.write_int("longitude-r17", longitude_r17);
+  j.write_int("inclination-r17", inclination_r17);
+  j.write_int("anomaly-r17", anomaly_r17);
+  j.end_obj();
+}
+
+// ServingSatelliteInfo-r17 ::= SEQUENCE
+SRSASN_CODE serving_satellite_info_r17_s::ephemeris_info_r17_c_::pack(bit_ref& bref) const
+{
+  HANDLE_CODE(type_.pack(bref)); // fails if no alternative was set
+  return type_ == types::state_vectors ? state_vectors.pack(bref) : orbital_params.pack(bref);
+}
+SRSASN_CODE serving_satellite_info_r17_s::ephemeris_info_r17_c_::unpack(cbit_ref& bref)
+{
+  HANDLE_CODE(type_.unpack(bref));
+  return type_ == types::state_vectors ? state_vectors.unpack(bref) : orbital_params.unpack(bref);
+}
+void serving_satellite_info_r17_s::ephemeris_info_r17_c_::to_json(json_writer& j) const
+{
+  j.start_obj();
+  if (type_ == types::state_vectors) {
+    j.write_fieldname("stateVectors");
+    state_vectors.to_json(j);
+  } else {
+    j.write_fieldname("orbitalParameters");
+    orbital_params.to_json(j);
+  }
+  j.end_obj();
+}
+std::string serving_satellite_info_r17_s::ephemeris_info_r17_c_::types_opts::to_string() const
+{
+  static const char* options[] = {"stateVectors", "orbitalParameters"};
+  return convert_enum_idx(options, 2, value, "serving_satellite_info_r17_s::ephemeris_info_r17_c_::types");
+}
+std::string serving_satellite_info_r17_s::ul_sync_validity_dur_r17_opts::to_string() const
+{
+  static const char* options[] = {
+      "s5", "s10", "s15", "s20", "s25", "s30", "s35", "s40", "s45", "s50", "s55", "s60", "s120", "s180", "s240", "s900"};
+  return convert_enum_idx(options, 16, value, "serving_satellite_info_r17_s::ul_sync_validity_dur_r17_e_");
+}
+uint16_t serving_satellite_info_r17_s::ul_sync_validity_dur_r17_opts::to_number() const
+{
+  static const uint16_t options[] = {5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 120, 180, 240, 900};
+  return map_enum_number(options, 16, value, "serving_satellite_info_r17_s::ul_sync_validity_dur_r17_e_");
+}
+SRSASN_CODE serving_satellite_info_r17_s::pack(bit_ref& bref) const
+{
+  if (ext) {
+    return SRSASN_ERROR_ENCODE_FAIL; // no extension additions in Rel-17
+  }
+  bref.pack(ext, 1);
+  HANDLE_CODE(bref.pack(epoch_time_r17_present, 1));
+  HANDLE_CODE(bref.pack(k_mac_r17_present, 1));
+
+  HANDLE_CODE(ephemeris_info_r17.pack(bref));
+  const nta_common_params_r17_s_& nta = nta_common_params_r17;
+  HANDLE_CODE(bref.pack(nta.nta_common_r17_present, 1));
+  HANDLE_CODE(bref.pack(nta.nta_common_drift_r17_present, 1));
+  HANDLE_CODE(bref.pack(nta.nta_common_drift_variation_r17_present, 1));
+  if (nta.nta_common_r17_present) {
+    HANDLE_CODE(pack_integer(bref, nta.nta_common_r17, (uint32_t)0u, (uint32_t)8316827u));
+  }
+  if (nta.nta_common_drift_r17_present) {
+    HANDLE_CODE(pack_integer(bref, nta.nta_common_drift_r17, (int32_t)-261935, (int32_t)261935));
+  }
+  if (nta.nta_common_drift_variation_r17_present) {
+    HANDLE_CODE(pack_integer(bref, nta.nta_common_drift_variation_r17, (uint16_t)0u, (uint16_t)29479u));
+  }
+  HANDLE_CODE(ul_sync_validity_dur_r17.pack(bref));
+  if (epoch_time_r17_present) {
+    HANDLE_CODE(pack_integer(bref, epoch_time_r17.start_sfn_r17, (uint16_t)0u, (uint16_t)1023u));
+    HANDLE_CODE(pack_integer(bref, epoch_time_r17.start_sub_frame_r17, (uint8_t)0u, (uint8_t)9u));
+  }
+  HANDLE_CODE(pack_integer(bref, k_offset_r17, (uint16_t)0u, (uint16_t)1023u));
+  if (k_mac_r17_present) {
+    HANDLE_CODE(pack_integer(bref, k_mac_r17, (uint16_t)1u, (uint16_t)512u));
+  }
+  return SRSASN_SUCCESS;
+}
+SRSASN_CODE serving_satellite_info_r17_s::unpack(cbit_ref& bref)
+{
+  bref.unpack(ext, 1);
+  if (ext) {
+    return SRSASN_ERROR_DECODE_FAIL; // extension additions (later release) not supported
+  }
+  HANDLE_CODE(bref.unpack(epoch_time_r17_present, 1));
+  HANDLE_CODE(bref.unpack(k_mac_r17_present, 1));
+
+  HANDLE_CODE(ephemeris_info_r17.unpack(bref));
+  nta_common_params_r17_s_& nta = nta_common_params_r17;
+  HANDLE_CODE(bref.unpack(nta.nta_common_r17_present, 1));
+  HANDLE_CODE(bref.unpack(nta.nta_common_drift_r17_present, 1));
+  HANDLE_CODE(bref.unpack(nta.nta_common_drift_variation_r17_present, 1));
+  if (nta.nta_common_r17_present) {
+    HANDLE_CODE(unpack_integer(nta.nta_common_r17, bref, (uint32_t)0u, (uint32_t)8316827u));
+  }
+  if (nta.nta_common_drift_r17_present) {
+    HANDLE_CODE(unpack_integer(nta.nta_common_drift_r17, bref, (int32_t)-261935, (int32_t)261935));
+  }
+  if (nta.nta_common_drift_variation_r17_present) {
+    HANDLE_CODE(unpack_integer(nta.nta_common_drift_variation_r17, bref, (uint16_t)0u, (uint16_t)29479u));
+  }
+  HANDLE_CODE(ul_sync_validity_dur_r17.unpack(bref));
+  if (epoch_time_r17_present) {
+    HANDLE_CODE(unpack_integer(epoch_time_r17.start_sfn_r17, bref, (uint16_t)0u, (uint16_t)1023u));
+    HANDLE_CODE(unpack_integer(epoch_time_r17.start_sub_frame_r17, bref, (uint8_t)0u, (uint8_t)9u));
+  }
+  HANDLE_CODE(unpack_integer(k_offset_r17, bref, (uint16_t)0u, (uint16_t)1023u));
+  if (k_mac_r17_present) {
+    HANDLE_CODE(unpack_integer(k_mac_r17, bref, (uint16_t)1u, (uint16_t)512u));
+  }
+  return SRSASN_SUCCESS;
+}
+void serving_satellite_info_r17_s::to_json(json_writer& j) const
+{
+  j.start_obj();
+  j.write_fieldname("ephemerisInfo-r17");
+  ephemeris_info_r17.to_json(j);
+  j.write_fieldname("nta-CommonParameters-r17");
+  j.start_obj();
+  if (nta_common_params_r17.nta_common_r17_present) {
+    j.write_int("nta-Common-r17", nta_common_params_r17.nta_common_r17);
+  }
+  if (nta_common_params_r17.nta_common_drift_r17_present) {
+    j.write_int("nta-CommonDrift-r17", nta_common_params_r17.nta_common_drift_r17);
+  }
+  if (nta_common_params_r17.nta_common_drift_variation_r17_present) {
+    j.write_int("nta-CommonDriftVariation-r17", nta_common_params_r17.nta_common_drift_variation_r17);
+  }
+  j.end_obj();
+  j.write_str("ul-SyncValidityDuration-r17", ul_sync_validity_dur_r17.to_string());
+  if (epoch_time_r17_present) {
+    j.write_fieldname("epochTime-r17");
+    j.start_obj();
+    j.write_int("startSFN-r17", epoch_time_r17.start_sfn_r17);
+    j.write_int("startSubFrame-r17", epoch_time_r17.start_sub_frame_r17);
+    j.end_obj();
+  }
+  j.write_int("k-Offset-r17", k_offset_r17);
+  if (k_mac_r17_present) {
+    j.write_int("k-Mac-r17", k_mac_r17);
+  }
+  j.end_obj();
+}
+
+// SystemInformationBlockType31-NB-r17 ::= SEQUENCE
+SRSASN_CODE sib_type31_nb_r17_s::pack(bit_ref& bref) const
+{
+  if (ext) {
+    return SRSASN_ERROR_ENCODE_FAIL; // no extension additions in Rel-17
+  }
+  bref.pack(ext, 1);
+  HANDLE_CODE(bref.pack(late_non_crit_ext_present, 1));
+  HANDLE_CODE(serving_satellite_info_r17.pack(bref));
+  if (late_non_crit_ext_present) {
+    HANDLE_CODE(late_non_crit_ext.pack(bref));
+  }
+  return SRSASN_SUCCESS;
+}
+SRSASN_CODE sib_type31_nb_r17_s::unpack(cbit_ref& bref)
+{
+  bref.unpack(ext, 1);
+  if (ext) {
+    return SRSASN_ERROR_DECODE_FAIL; // extension additions (later release) not supported
+  }
+  HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
+  HANDLE_CODE(serving_satellite_info_r17.unpack(bref));
+  if (late_non_crit_ext_present) {
+    HANDLE_CODE(late_non_crit_ext.unpack(bref));
+  }
+  return SRSASN_SUCCESS;
+}
+void sib_type31_nb_r17_s::to_json(json_writer& j) const
+{
+  j.start_obj();
+  j.write_fieldname("servingSatelliteInfo-r17");
+  serving_satellite_info_r17.to_json(j);
+  if (late_non_crit_ext_present) {
+    j.write_str("lateNonCriticalExtension", late_non_crit_ext.to_string());
+  }
+  j.end_obj();
+}
+
 SRSASN_CODE sys_info_nb_r13_ies_s::pack(bit_ref& bref) const
 {
   HANDLE_CODE(bref.pack(late_non_crit_ext_present, 1));
@@ -10785,6 +11128,13 @@ void sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::destroy_()
     case types::sib23_v1530:
       c.destroy<sib_type23_nb_r15_s>();
       break;
+    case types::sib27_v1610:
+    case types::sib32_v1700:
+      c.destroy<dyn_octstring>();
+      break;
+    case types::sib31_v1700:
+      c.destroy<sib_type31_nb_r17_s>();
+      break;
     default:
       break;
   }
@@ -10823,6 +11173,13 @@ void sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::set(types::options e)
       break;
     case types::sib23_v1530:
       c.init<sib_type23_nb_r15_s>();
+      break;
+    case types::sib27_v1610:
+    case types::sib32_v1700:
+      c.init<dyn_octstring>();
+      break;
+    case types::sib31_v1700:
+      c.init<sib_type31_nb_r17_s>();
       break;
     case types::nulltype:
       break;
@@ -10864,6 +11221,13 @@ sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::sib_type_and_info_r13_item
       break;
     case types::sib23_v1530:
       c.init(other.c.get<sib_type23_nb_r15_s>());
+      break;
+    case types::sib27_v1610:
+    case types::sib32_v1700:
+      c.init(other.c.get<dyn_octstring>());
+      break;
+    case types::sib31_v1700:
+      c.init(other.c.get<sib_type31_nb_r17_s>());
       break;
     case types::nulltype:
       break;
@@ -10908,6 +11272,13 @@ sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_& sys_info_nb_r13_ies_s::sib
       break;
     case types::sib23_v1530:
       c.set(other.c.get<sib_type23_nb_r15_s>());
+      break;
+    case types::sib27_v1610:
+    case types::sib32_v1700:
+      c.set(other.c.get<dyn_octstring>());
+      break;
+    case types::sib31_v1700:
+      c.set(other.c.get<sib_type31_nb_r17_s>());
       break;
     case types::nulltype:
       break;
@@ -10961,6 +11332,16 @@ void sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::to_json(json_writer& 
       j.write_fieldname("sib23-v1530");
       c.get<sib_type23_nb_r15_s>().to_json(j);
       break;
+    case types::sib27_v1610:
+      j.write_str("sib27-v1610", c.get<dyn_octstring>().to_string());
+      break;
+    case types::sib31_v1700:
+      j.write_fieldname("sib31-v1700");
+      c.get<sib_type31_nb_r17_s>().to_json(j);
+      break;
+    case types::sib32_v1700:
+      j.write_str("sib32-v1700", c.get<dyn_octstring>().to_string());
+      break;
     default:
       log_invalid_choice_id(type_, "sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_");
   }
@@ -11003,6 +11384,15 @@ SRSASN_CODE sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::pack(bit_ref& 
     case types::sib23_v1530: {
       varlength_field_pack_guard varlen_scope(bref, false);
       HANDLE_CODE(c.get<sib_type23_nb_r15_s>().pack(bref));
+    } break;
+    case types::sib27_v1610:
+    case types::sib32_v1700:
+      // open type: length + the octets of the encoded SIB, i.e. an unconstrained OCTET STRING
+      HANDLE_CODE(c.get<dyn_octstring>().pack(bref));
+      break;
+    case types::sib31_v1700: {
+      varlength_field_pack_guard varlen_scope(bref, false);
+      HANDLE_CODE(c.get<sib_type31_nb_r17_s>().pack(bref));
     } break;
     default:
       log_invalid_choice_id(type_, "sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_");
@@ -11050,6 +11440,14 @@ SRSASN_CODE sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::unpack(cbit_re
       varlength_field_unpack_guard varlen_scope(bref, false);
       HANDLE_CODE(c.get<sib_type23_nb_r15_s>().unpack(bref));
     } break;
+    case types::sib27_v1610:
+    case types::sib32_v1700:
+      HANDLE_CODE(c.get<dyn_octstring>().unpack(bref));
+      break;
+    case types::sib31_v1700: {
+      varlength_field_unpack_guard varlen_scope(bref, false);
+      HANDLE_CODE(c.get<sib_type31_nb_r17_s>().unpack(bref));
+    } break;
     default:
       log_invalid_choice_id(type_, "sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_");
       return SRSASN_ERROR_DECODE_FAIL;
@@ -11068,13 +11466,16 @@ std::string sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::types_opts::to
                                   "sib15-v1430",
                                   "sib20-v1430",
                                   "sib22-v1430",
-                                  "sib23-v1530"};
-  return convert_enum_idx(options, 10, value, "sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::types");
+                                  "sib23-v1530",
+                                  "sib27-v1610",
+                                  "sib31-v1700",
+                                  "sib32-v1700"};
+  return convert_enum_idx(options, 13, value, "sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::types");
 }
 uint8_t sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::types_opts::to_number() const
 {
-  static const uint8_t options[] = {2, 3, 4, 5, 14, 16, 15, 20, 22, 23};
-  return map_enum_number(options, 10, value, "sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::types");
+  static const uint8_t options[] = {2, 3, 4, 5, 14, 16, 15, 20, 22, 23, 27, 31, 32};
+  return map_enum_number(options, 13, value, "sys_info_nb_r13_ies_s::sib_type_and_info_r13_item_c_::types");
 }
 
 // SystemInformationBlockType1-NB-v1350 ::= SEQUENCE

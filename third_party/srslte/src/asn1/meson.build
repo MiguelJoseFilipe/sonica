@@ -33,3 +33,8 @@ srslte_s1ap_asn1 = static_library('srslte_s1ap_asn1', 's1ap_asn1.cc',
   cpp_args : ['-Os'],
   link_with : [srslte_common, srslte_asn1_utils]
 )
+
+# SIB31-NB / SIB1-NB Rel-17 extensions: golden vectors from the TS 36.331 ASN.1 (meson test)
+test('sib31_nb', executable('sib31_nb_test', 'sib31_nb_test.cc',
+  include_directories : srslte_inc,
+  link_with : [srslte_rrc_asn1, srslte_asn1_utils, srslte_common]))
