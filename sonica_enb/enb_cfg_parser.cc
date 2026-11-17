@@ -20,6 +20,7 @@
  */
 
 #include "enb_cfg_parser.h"
+#include <fstream>
 #include "sonica_enb/hdr/enb_nb.h"
 #include "sonica_enb/hdr/stack/mac/scheduler_carrier.h"
 #include "srslte/asn1/liblte_common.h"
@@ -599,6 +600,18 @@ int parse_sibs(all_args_t* args_, rrc_cfg_t* rrc_cfg_, phy_cfg_t* phy_config_com
     if (parser::parse_section(args_->enb_files.sib_config, &s31) != SRSLTE_SUCCESS) {
       return SRSLTE_ERROR;
     }
+    // The ephemeris follows the cell model: SIB31 on air iff "Doppler model = 1" (QEF) in config.txt,
+    // the file the Doppler emulation reads (doppler_shift.cc); the sib31 section only holds its parameters
+    int           doppler_model = 0;
+    std::ifstream cfg("../../../config.txt");
+    for (std::string l; std::getline(cfg, l);) {
+      if (!l.empty() && l[0] != '#') sscanf(l.c_str(), "Doppler model = %d", &doppler_model);
+    }
+    if (doppler_model == 1 && !sib31_en) {
+      ERROR("Doppler model = 1 (QEF) broadcasts SIB31-NB: add the sib31 section to sib_nb.conf\n");
+      return SRSLTE_ERROR;
+    }
+    sib31_en = sib31_en && doppler_model == 1;
     if (sib31_en) {
       // bc_sched places SI #1 in frames 0..15 and SI #2 in 16..31 of every 512, every 4th frame
       if (sib1->sched_info_list_r13.size() != 1 || sib1->si_win_len_r13.to_number() != 160 ||
