@@ -381,7 +381,9 @@ void txrx::run_thread()
   radio_h->set_tx_srate(samp_rate);
 
   // Set Tx/Rx frequencies
-  double tx_freq_hz = f_carrier;
+  // DL carrier = "Carrier frequency" of config.txt (the Doppler model's carrier too); built-in default if absent
+  double tx_freq_hz = std::get<1>(sonica_enb::doppler_shift().get_parameters());
+  if (tx_freq_hz < 1e8) tx_freq_hz = f_carrier;
   double rx_freq_hz = worker_com->get_ul_freq_hz();
   log_h->console(
       "Setting frequency: DL=%.4f Mhz, UL=%.4f MHz", tx_freq_hz / 1e6f, rx_freq_hz / 1e6f);
