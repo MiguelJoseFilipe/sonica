@@ -20,6 +20,8 @@
  *
  */
 
+#include <cmath>
+#include <complex>
 #include <math.h>
 #include <pthread.h>
 #include <semaphore.h>
@@ -157,7 +159,8 @@ static char empty_str[] = "";
 void NBFramework::args_default()
 {
   args.use_prf_file             = false;
-
+  args.input_file               = NULL;
+  args.pre_cfo_hz               = 0.0;
   args.rf_args                  = empty_str;
   args.rf_device                = nullptr;
   args.rf_freq_dl               = -1.0;
@@ -178,7 +181,7 @@ void NBFramework::parse_args(int argc, char *argv[])
   int opt;
   args_default();
 
-  while ((opt = getopt(argc, argv, "amgRBlHCdDsvrfqwzxcFSGU")) != -1) {
+  while ((opt = getopt(argc, argv, "amgRBlHCdDsvrfqwzxcFSGUiO")) != -1) {
     switch (opt) {
       case 'a':
         args.rf_args = argv[optind];
@@ -222,12 +225,19 @@ void NBFramework::parse_args(int argc, char *argv[])
       case 'S':
         args.nof_adv_samples = (int32_t)strtol(argv[optind], NULL, 10);
         break;
+      case 'i':
+        args.input_file = argv[optind];
+        args.use_prf_file = true;
+        break;
+      case 'O':
+        args.pre_cfo_hz = strtod(argv[optind], NULL);
+        break;
       default:
         // usage(args, argv[0]);
         exit(-1);
     }
   }
-  if (args.rf_freq_dl < 0) {
+  if (args.rf_freq_dl < 0 && !args.use_prf_file) {
     // usage(args, argv[0]);
     exit(-1);
   }
@@ -235,6 +245,21 @@ void NBFramework::parse_args(int argc, char *argv[])
 
 int NBFramework::rf_recv(cf_t* x[SRSLTE_MAX_PORTS], uint32_t nsamples, srslte_timestamp_t* t)
 {
+  if (args.use_prf_file) {
+    int n = srslte_filesource_read(&fsrc, x[0], nsamples);
+    if (n < (int)nsamples) { go_exit = true; return 0; }   // end of file stops run()
+    if (args.pre_cfo_hz != 0.0) {
+      auto* s = reinterpret_cast<std::complex<float>*>(x[0]);   // cf_t is _Complex float, same layout
+      for (int k = 0; k < n; k++) {
+        // phase from the absolute sample index: continuous across calls, no accumulated drift
+        double ph = -2 * M_PI * std::fmod(args.pre_cfo_hz * (double)(file_nsamples + k) / cur_tx_srate, 1.0);
+        s[k] *= std::complex<float>(std::cos(ph), std::sin(ph));
+      }
+    }
+    srslte_timestamp_init(t, 0, (double)file_nsamples / cur_tx_srate);
+    file_nsamples += n;
+    return n;
+  }
   DEBUG(" ----  Receive %d samples  ---- \n", nsamples);
   return srslte_rf_recv_with_time_multi(&rf, (void **)x, nsamples, true, &t->full_secs, &t->frac_secs);
 }
@@ -368,7 +393,12 @@ int NBFramework::init_rf()
       return SRSLTE_ERROR;
     }
   } else {
-    return SRSLTE_ERROR;
+    // shortcut: complex float32 at 1.92 Msps only (uhd rx_samples_to_file --type float), no resampling
+    if (srslte_filesource_init(&fsrc, args.input_file, SRSLTE_COMPLEX_FLOAT_BIN)) {
+      fprintf(stderr, "Error opening %s\n", args.input_file);
+      return SRSLTE_ERROR;
+    }
+    cur_tx_srate = srslte_sampling_freq_hz(cell.base.nof_prb);
   }
 
   return SRSLTE_SUCCESS;
@@ -376,6 +406,8 @@ int NBFramework::init_rf()
 
 void NBFramework::run()
 {
+  if (!args.use_prf_file) srslte_rf_start_rx_stream(&rf, false);
+
   int ret;
   int n;
   float cfo = 0;
@@ -384,7 +416,6 @@ void NBFramework::run()
   uint32_t nframes = 0;
   float    rsrp = 0.0, rsrq = 0.0, noise = 0.0;
 
-  srslte_rf_start_rx_stream(&rf, false);
 
   ue_sync.correct_cfo = !args.disable_cfo;
   // Set initial CFO for ue_sync
@@ -423,6 +454,12 @@ void NBFramework::run()
 
               // update SFN and set deployment mode
               system_frame_number = (mib.sfn + sfn_offset) % 1024;
+              {  // alignment anchor: file time (s) of this subframe's start <-> SFN.sf
+                srslte_timestamp_t ts;
+                srslte_ue_sync_nbiot_get_last_timestamp(&ue_sync, &ts);
+                printf("ALIGN MIB t_file %.6f s SFN %d sf %d HFN-LSB %d\n", srslte_timestamp_real(&ts),
+                       system_frame_number, get_sfidx(), mib.hfn);
+              }
               cell.mode = mib.mode;
 
               // set number of ports of base cell to that of NB-IoT cell (FIXME: read eutra-NumCRS-Ports-r13)
@@ -574,6 +611,12 @@ void NBFramework::run()
                                                            SRSLTE_SIRNTI);
             if (dec_ret == SRSLTE_SUCCESS) {
               have_sib31 = print_sib31(rx_tb, sib31_params.si_tb / 8) == SRSLTE_SUCCESS;
+              if (have_sib31) {  // last subframe of the SIB31 SI message; its epoch SFN is in the line above
+                srslte_timestamp_t ts;
+                srslte_ue_sync_nbiot_get_last_timestamp(&ue_sync, &ts);
+                printf("ALIGN SIB31 t_file %.6f s SFN %d sf %d\n", srslte_timestamp_real(&ts), system_frame_number,
+                       get_sfidx());
+              }
             }
             if (!have_sib31 && srslte_nbiot_ue_dl_has_grant(&ue_dl) == false) {
               srslte_nbiot_ue_dl_decode_sib(
@@ -689,7 +732,7 @@ void NBFramework::run()
     
   }
 
-  srslte_rf_close(&rf);
+  if (args.use_prf_file) srslte_filesource_free(&fsrc); else srslte_rf_close(&rf);
   printf("\nBye\n");
 }
 

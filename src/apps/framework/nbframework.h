@@ -32,6 +32,7 @@ extern "C" {
 #include "srslte/phy/ue/ue_dl_nbiot.h"
 #include "srslte/phy/ue/ue_mib_nbiot.h"
 #include "srslte/phy/ue/ue_sync_nbiot.h"
+#include "srslte/phy/io/filesource.h"
 }
 
 class NBFramework {
@@ -65,6 +66,8 @@ protected:
   // arguments
   struct {
     bool use_prf_file;
+    char* input_file;
+    double pre_cfo_hz; // frequency offset present in the samples, removed before srsLTE sees them
 
     char *rf_args;
     char *rf_device;
@@ -130,6 +133,8 @@ private:
   cf_t* zero_buffer;
 
   static bool go_exit;
+  srslte_filesource_t fsrc;
+  uint64_t file_nsamples = 0; // samples read, gives the timestamp in file mode
 
   void args_default();
   int rf_recv(cf_t* x[SRSLTE_MAX_PORTS], uint32_t nsamples, srslte_timestamp_t* t);
