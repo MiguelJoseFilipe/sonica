@@ -163,7 +163,7 @@ typedef enum { SRSLTE_SF_NORM = 0, SRSLTE_SF_MBSFN } srslte_sf_t;
 #define SRSLTE_FDD_NOF_HARQ (FDD_HARQ_DELAY_DL_MS + FDD_HARQ_DELAY_UL_MS)
 #define SRSLTE_MAX_HARQ_PROC 15
 
-#define SRSLTE_NOF_LTE_BANDS 58
+#define SRSLTE_NOF_LTE_BANDS 60
 
 #define SRSLTE_DEFAULT_MAX_FRAMES_PBCH 500
 #define SRSLTE_DEFAULT_MAX_FRAMES_PSS 10
@@ -406,7 +406,7 @@ SRSLTE_API char* srslte_mod_string(srslte_mod_t mod);
 
 SRSLTE_API uint32_t srslte_mod_bits_x_symbol(srslte_mod_t mod);
 
-SRSLTE_API uint8_t srslte_band_get_band(uint32_t dl_earfcn);
+SRSLTE_API uint16_t srslte_band_get_band(uint32_t dl_earfcn);
 
 SRSLTE_API bool srslte_band_is_tdd(uint32_t band);
 

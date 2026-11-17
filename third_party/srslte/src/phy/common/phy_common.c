@@ -508,7 +508,7 @@ uint32_t srslte_re_x_prb(uint32_t ns, uint32_t symbol, uint32_t nof_ports, uint3
 }
 
 struct lte_band {
-  uint8_t                     band;
+  uint16_t                    band;
   double                      fd_low_mhz;
   uint32_t                    dl_earfcn_offset;
   uint32_t                    ul_earfcn_offset;
@@ -574,7 +574,10 @@ struct lte_band lte_bands[SRSLTE_NOF_LTE_BANDS] = {
     {68, 753, 67536, 132672, 55, SRSLTE_BAND_GEO_AREA_EMEA},
     {69, 2570, 67836, 0, 0, SRSLTE_BAND_GEO_AREA_EMEA},
     {70, 1995, 68336, 132972, 300, SRSLTE_BAND_GEO_AREA_NAR},
-    {71, 0, 68586, 133122, 0, SRSLTE_BAND_GEO_AREA_NAR} // dummy band to bound band 70 earfcn
+    {71, 0, 68586, 133122, 0, SRSLTE_BAND_GEO_AREA_NAR}, // dummy band to bound band 70 earfcn
+    // TS 36.102 Table 5.2-1 / 5.4A.2-1: E-UTRA satellite band 256 (S-band, = NR n256)
+    {256, 2170, 229076, 261844, 190, SRSLTE_BAND_GEO_AREA_ALL},
+    {257, 0, 229376, 262144, 0, SRSLTE_BAND_GEO_AREA_ALL} // dummy band to bound band 256 earfcn
 };
 
 int srslte_str2mimotype(char* mimo_type_str, srslte_tx_scheme_t* type)
@@ -644,7 +647,7 @@ bool srslte_band_is_tdd(uint32_t band)
   return lte_bands[i].ul_earfcn_offset == 0;
 }
 
-uint8_t srslte_band_get_band(uint32_t dl_earfcn)
+uint16_t srslte_band_get_band(uint32_t dl_earfcn)
 {
   uint32_t i = SRSLTE_NOF_LTE_BANDS - 1;
   if (dl_earfcn > lte_bands[i].dl_earfcn_offset) {

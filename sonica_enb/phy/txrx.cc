@@ -35,7 +35,6 @@
 #include "sonica_enb/hdr/phy/sf_worker.h"
 #include "sonica_enb/hdr/phy/txrx.h"
 #include "sonica_enb/hdr/phy/doppler_shift.h"
-double f_carrier = 2154.8975e6;
 
 ExperimentTimes experiment_times{0.0, 0.0};
 #include <mutex>
@@ -381,9 +380,14 @@ void txrx::run_thread()
   radio_h->set_tx_srate(samp_rate);
 
   // Set Tx/Rx frequencies
-  // DL carrier = "Carrier frequency" of config.txt (the Doppler model's carrier too); built-in default if absent
-  double tx_freq_hz = std::get<1>(sonica_enb::doppler_shift().get_parameters());
-  if (tx_freq_hz < 1e8) tx_freq_hz = f_carrier;
+  // DL carrier = the cell's dl_earfcn (rr.conf); the Doppler model's "Carrier frequency" (config.txt) must match it
+  double tx_freq_hz = worker_com->get_dl_freq_hz();
+  const double doppler_carrier_hz = std::get<1>(sonica_enb::doppler_shift().get_parameters());
+  if (std::fabs(doppler_carrier_hz - tx_freq_hz) > 1.0) {
+    fprintf(stderr, "config.txt Carrier frequency %.0f Hz != cell DL carrier %.0f Hz (dl_earfcn): fix one of them\n",
+            doppler_carrier_hz, tx_freq_hz);
+    std::exit(EXIT_FAILURE);
+  }
   double rx_freq_hz = worker_com->get_ul_freq_hz();
   log_h->console(
       "Setting frequency: DL=%.4f Mhz, UL=%.4f MHz", tx_freq_hz / 1e6f, rx_freq_hz / 1e6f);

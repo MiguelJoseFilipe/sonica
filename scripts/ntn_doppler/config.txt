@@ -4,7 +4,7 @@
 
 ### Pass ###
 Maximum elevation = 60
-Carrier frequency = 2154884190
+Carrier frequency = 2185000000
 AWGN = 0.0
 FSPL = 0.0
 
