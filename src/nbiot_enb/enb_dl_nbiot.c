@@ -74,7 +74,7 @@ int sonica_enb_dl_nbiot_init(sonica_enb_dl_nbiot_t* q, cf_t* out_buffer[SRSLTE_M
       goto clean_exit;
     }
 
-    if (srslte_npdsch_init(&q->npdsch)) {
+    if (srslte_npdsch_init(&q->npdsch) || srslte_npdsch_init(&q->npdsch_sib1)) {
       ERROR("Error creating NPDSCH object\n");
       goto clean_exit;
     }
@@ -116,6 +116,7 @@ void sonica_enb_dl_nbiot_free(sonica_enb_dl_nbiot_t* q)
     srslte_npbch_free(&q->npbch);
     srslte_npdcch_free(&q->npdcch);
     srslte_npdsch_free(&q->npdsch);
+    srslte_npdsch_free(&q->npdsch_sib1);
     srslte_chest_dl_nbiot_free(&q->ch_est);
     srslte_npss_synch_free(&q->npss_sync);
     srslte_nsss_synch_free(&q->nsss_sync);
@@ -141,7 +142,7 @@ int sonica_enb_dl_nbiot_set_cell(sonica_enb_dl_nbiot_t* q, srslte_nbiot_cell_t c
         return SRSLTE_ERROR;
       }
 
-      if (srslte_npdsch_set_cell(&q->npdsch, q->cell)) {
+      if (srslte_npdsch_set_cell(&q->npdsch, q->cell) || srslte_npdsch_set_cell(&q->npdsch_sib1, q->cell)) {
         ERROR("Error setting cell in NPDSCH object\n");
         return SRSLTE_ERROR;
       }
@@ -307,7 +308,7 @@ int sonica_enb_dl_nbiot_put_npdsch(sonica_enb_dl_nbiot_t* q,
                                    uint8_t*               data,
                                    uint16_t               rnti)
 {
-  return srslte_npdsch_encode_rnti(&q->npdsch, cfg, NULL, data, rnti, q->sf_symbols);
+  return srslte_npdsch_encode_rnti(cfg->grant.has_sib1 ? &q->npdsch_sib1 : &q->npdsch, cfg, NULL, data, rnti, q->sf_symbols);
 }
 
 void sonica_enb_dl_nbiot_gen_signal(sonica_enb_dl_nbiot_t* q)

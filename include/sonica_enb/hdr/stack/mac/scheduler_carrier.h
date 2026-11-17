@@ -93,6 +93,8 @@ private:
 
 // TBS of SI #2 (SIB31-NB), set by the config parser; 0 = no SI #2
 extern uint32_t g_sib31_si_tb;
+// Cell ID (PCI), set by the config parser: SIB1-NB start frame and frame parity (36.213 16.4.1.3)
+extern uint32_t g_n_id_ncell;
 
 //! Broadcast (SIB + paging) scheduler
 class bc_sched

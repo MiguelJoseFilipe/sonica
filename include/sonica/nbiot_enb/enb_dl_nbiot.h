@@ -46,6 +46,7 @@ typedef struct SONICA_API {
   srslte_npbch_t           npbch;
   srslte_npdcch_t          npdcch;
   srslte_npdsch_t          npdsch;
+  srslte_npdsch_t          npdsch_sib1; // own codeword buffer: a SIB1-NB encode must not overwrite an ongoing SI message
   srslte_npss_synch_t      npss_sync;
   srslte_nsss_synch_t      nsss_sync;
   srslte_chest_dl_nbiot_t  ch_est;

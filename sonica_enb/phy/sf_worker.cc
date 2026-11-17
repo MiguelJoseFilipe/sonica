@@ -342,7 +342,7 @@ static bool h_ndi_ul = false;
 
 /* True if this subframe carries SIB1-NB, as scheduled by bc_sched::is_sib1_sf(). These subframes
  * cannot carry another NPDSCH (36.213 16.4.1.3). */
-static bool sf_is_sib1(uint32_t sfn, uint32_t sf_idx)
+static bool sf_is_sib1(uint32_t sfn, uint32_t sf_idx, uint32_t n_id_ncell)
 {
   if (sf_idx != 4) {
     return false;
@@ -354,12 +354,12 @@ static bool sf_is_sib1(uint32_t sfn, uint32_t sf_idx)
   mib_nb.mode             = SRSLTE_NBIOT_MODE_STANDALONE;
 
   uint32_t num_rep    = srslte_ra_n_rep_sib1_nb(&mib_nb);
-  uint32_t sib1_start = srslte_ra_nbiot_get_starting_sib1_frame(99, &mib_nb);
+  uint32_t sib1_start = srslte_ra_nbiot_get_starting_sib1_frame(n_id_ncell, &mib_nb);
 
   for (uint32_t k = 0; k < 4; k++) {
     for (uint32_t i = 0; i < num_rep; i++) {
       uint32_t first = k * SIB1_NB_TTI + sib1_start + (i * SIB1_NB_TTI / num_rep);
-      uint32_t valid_si_sfn = sfn + srslte_ra_nbiot_sib1_start(99, &mib_nb);
+      uint32_t valid_si_sfn = sfn + srslte_ra_nbiot_sib1_start(n_id_ncell, &mib_nb);
       if (sfn >= first && sfn < first + 16 && (valid_si_sfn % 2) == 0) {
         return true;
       }
@@ -393,8 +393,13 @@ void sf_worker::work_dl(stack_interface_phy_nb::dl_sched_t& dl_grants,
 
     // First case: SIB 1 needs to be sent out immediately at highest priority
     if (dci->alloc.has_sib1) {
-      // SIB1 hasn't been configured, expecting a new config from MAC
-      if (dl_grants.npdsch.is_new_sib) {
+      // A SIB1-NB transmission (nof_rep repetitions) may only start at a SIB1 period start (36.213 16.4.1.3):
+      // otherwise a first block missed at TX start shifts every later transmission by one block for good
+      srslte_mib_nb_t sib1_mib = {};
+      sib1_mib.sched_info_sib1 = 5; // same value as bc_sched
+      bool sib1_period_start   = sfn % SIB1_NB_TTI ==
+                               (uint32_t)srslte_ra_nbiot_get_starting_sib1_frame(cell.n_id_ncell, &sib1_mib);
+      if (dl_grants.npdsch.is_new_sib && sib1_period_start) {
         if (sib1_npdsch_cfg.sf_idx > 0) {
           Warning("Original SIB1 config has not finished transmission\n");
         }
@@ -459,7 +464,7 @@ void sf_worker::work_dl(stack_interface_phy_nb::dl_sched_t& dl_grants,
 
         // srslte_ra_nbiot_dl_dci_to_grant() does not skip SIB1-NB subframes: move the start to the
         // next valid DL subframe
-        while (sf_is_sib1(grant.start_sfn, grant.start_sfidx) ||
+        while (sf_is_sib1(grant.start_sfn, grant.start_sfidx, cell.n_id_ncell) ||
                !srslte_ra_nbiot_is_valid_dl_sf(grant.start_sfn * 10 + grant.start_sfidx)) {
           uint32_t next   = (grant.start_sfn * 10 + grant.start_sfidx + 1) % 10240;
           grant.start_sfn = next / 10;

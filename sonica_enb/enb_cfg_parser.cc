@@ -298,6 +298,7 @@ static void fill_phy_cell_cfg(all_args_t* args_, rrc_cfg_t* rrc_cfg_, phy_cell_c
 
   // Then, fill the rest
   cell->n_id_ncell = rrc_cfg_->cell_spec.pci;
+  g_n_id_ncell     = cell->n_id_ncell; // MAC SIB1-NB timing
   switch (rrc_cfg_->cell_spec.mode) {
   case asn1::rrc::mib_nb_s::operation_mode_info_r13_c_::types::standalone_r13:
     cell->mode = SRSLTE_NBIOT_MODE_STANDALONE;

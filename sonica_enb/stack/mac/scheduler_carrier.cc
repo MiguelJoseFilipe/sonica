@@ -27,6 +27,7 @@
 namespace sonica_enb {
 
 uint32_t g_sib31_si_tb = 0;
+uint32_t g_n_id_ncell  = 0;
 
 /*******************************************************
  *        Broadcast (SIB+Paging) scheduling
@@ -41,7 +42,7 @@ bc_sched::bc_sched() : log_h(srslte::logmap::get("MAC"))
   mib_nb.mode            = SRSLTE_NBIOT_MODE_STANDALONE;
 
   uint32_t num_rep    = srslte_ra_n_rep_sib1_nb(&mib_nb);
-  uint32_t sib1_start = srslte_ra_nbiot_get_starting_sib1_frame(99, &mib_nb); // FIXME: Set tmp cell.n_id_ncell=99
+  uint32_t sib1_start = srslte_ra_nbiot_get_starting_sib1_frame(g_n_id_ncell, &mib_nb);
   uint32_t idx        = 0;
 
   for (uint32_t k = 0; k < 4; k++) {
@@ -105,7 +106,7 @@ bool bc_sched::is_sib1_sf(uint32_t sfn, uint32_t sf_idx)
 
   for (int i = 0; i < SIB1_NB_MAX_REP * 4; i++) {
     // every second frame within the next 16 SFN starting at q->sib1_sfn[i] are valid
-    uint32_t valid_si_sfn = sfn + srslte_ra_nbiot_sib1_start(99, &mib_nb); // FIXME: Set tmp cell.n_id_ncell=99
+    uint32_t valid_si_sfn = sfn + srslte_ra_nbiot_sib1_start(g_n_id_ncell, &mib_nb);
     if ((sfn >= sib1_sfn[i]) && (sfn < sib1_sfn[i] + 16) && (valid_si_sfn % 2 == 0)) {
       ret = true;
       break;
@@ -133,10 +134,11 @@ void bc_sched::alloc_sibs(uint32_t hfn, sf_sched* tti_sched)
 
     sf_sched::bc_alloc_t bc_alloc{};
 
-    if (sib1_sf_idx == 0) {
-      bc_alloc.is_new_sib = true;
-    } else {
-      bc_alloc.is_new_sib = false;
+    // A new SIB1-NB transmission starts at its period start (sib1_sfn[0] = first frame of period 0), not after
+    // counting sib1_num_sf subframes: a subframe lost at TX start would shift every later transmission
+    bc_alloc.is_new_sib = sfn % SIB1_NB_TTI == sib1_sfn[0];
+    if (bc_alloc.is_new_sib) {
+      sib1_sf_idx = 0;
     }
 
     // Update the sched table
@@ -171,7 +173,9 @@ void bc_sched::alloc_sibs(uint32_t hfn, sf_sched* tti_sched)
       // Update dl_sched table
       uint32_t alloc_i = 0, rem_sib = sib2_num_sf;
       while (rem_sib > 0) {
-        if (srslte_ra_nbiot_is_valid_dl_sf((current_tti + alloc_i) % 10240)) {
+        uint32_t t = (current_tti + alloc_i) % 10240;
+        // SIB1-NB subframes are not available to SI messages (36.213 16.4.1.3); taking them dropped SIB1 repetitions
+        if (srslte_ra_nbiot_is_valid_dl_sf(t) && !is_sib1_sf(t / 10, t % 10)) {
           //printf("DL_sched_table %d: allocate to sib2\n", (current_tti + alloc_i) % 10240);
           tti_sched->dl_sched_table[(current_tti + alloc_i) % 10240] = true;
           rem_sib--;
