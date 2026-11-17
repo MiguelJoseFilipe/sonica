@@ -439,8 +439,14 @@ void txrx::run_thread()
   server_clock.start();
   // Wait for the clock server connection only: the thread runs for the eNB lifetime
   for (int i = 0; i < 200 && !server_connect.load(); ++i) usleep(50000);  // up to 10 s
+  // Without the clock server the pass time falls back to the wall clock (not anchored, UEs not aligned): refuse to
+  // transmit, except in calibration mode (constant Doppler, no pass clock)
   if (!server_connect.load()) {
-    std::cerr << "WARNING: clock server not connected -- UEs will not be time-aligned." << std::endl;
+    if (!g_calibration.load()) {
+      fprintf(stderr, "clock server not connected (REMOTE_IP in config.txt, port 65432): refusing to transmit\n");
+      std::exit(EXIT_FAILURE);
+    }
+    std::cerr << "WARNING: clock server not connected (calibration mode, constant Doppler)." << std::endl;
   }
   // Quasi-earth-fixed ("Doppler model = 1"): residual Doppler and beam gain from the QEF table;
   // otherwise the earth-moving Doppler table over the whole pass [-vis/2, +vis/2]
