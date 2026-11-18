@@ -19,8 +19,10 @@
  *
  */
 
+#include <math.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
@@ -67,6 +69,9 @@ typedef struct {
   pthread_t async_thread;
 
   pthread_mutex_t tx_mutex;
+
+  double tx_lo_offset_hz;  // device arg tx_lo_offset_hz=: TX LO at carrier + offset, DSP shifts back (0 = AUTO tune)
+  bool   tune_int_n;       // device arg tune_mode_n=integer: UBX Integer-N tuning
 } rf_uhd_handler_t;
 
 void suppress_handler(const char* x)
@@ -613,6 +618,31 @@ int rf_uhd_open_multi(char* args, void** h, uint32_t nof_channels)
       remove_substring(args, rx_subdev_str);
     }
 
+    // UHD manual, Tuning Notes: advanced tuning with an LO offset "makes it easy to move the DC component out of your
+    // band-of-interest" (TX LO leakage); UBX: "Integer-N tuning for better spur performance". Not UHD device args:
+    // removed here, applied in rf_uhd_set_tx_freq.
+    handler->tx_lo_offset_hz      = 0.0;
+    const char lo_arg[]           = "tx_lo_offset_hz=";
+    char*      lo_ptr             = strstr(args, lo_arg);
+    if (lo_ptr) {
+      char lo_str[64] = {0}, tok[96];
+      copy_subdev_string(lo_str, lo_ptr + strlen(lo_arg));
+      handler->tx_lo_offset_hz = atof(lo_str);
+      snprintf(tok, sizeof(tok), "%s%s,", lo_arg, lo_str);
+      remove_substring(args, tok);  // "key=v," (not last in the list)
+      tok[strlen(tok) - 1] = '\0';
+      remove_substring(args, tok);  // "key=v" (last)
+      size_t n = strlen(args);
+      if (n && args[n - 1] == ',') {
+        args[n - 1] = '\0';  // the comma that preceded a last "key=v"
+      }
+    }
+    handler->tune_int_n = false;
+    if (strstr(args, "tune_mode_n=integer")) {
+      REMOVE_SUBSTRING_WITHCOMAS(args, "tune_mode_n=integer");
+      handler->tune_int_n = true;
+    }
+
     /* If device type or name not given in args, choose a B200 */
     if (args[0] == '\0') {
       if (find_string(devices_str, "type=b200") && !strstr(args, "recv_frame_size")) {
@@ -982,18 +1012,35 @@ double rf_uhd_set_rx_freq(void* h, uint32_t ch, double freq)
 
 double rf_uhd_set_tx_freq(void* h, uint32_t ch, double freq)
 {
+  rf_uhd_handler_t*  handler      = (rf_uhd_handler_t*)h;
+  const bool         offset       = handler->tx_lo_offset_hz != 0.0;
   uhd_tune_request_t tune_request = {
       .target_freq     = freq,
-      .rf_freq_policy  = UHD_TUNE_REQUEST_POLICY_AUTO,
+      .rf_freq_policy  = offset ? UHD_TUNE_REQUEST_POLICY_MANUAL : UHD_TUNE_REQUEST_POLICY_AUTO,
+      .rf_freq         = freq + handler->tx_lo_offset_hz,
       .dsp_freq_policy = UHD_TUNE_REQUEST_POLICY_AUTO,
+      .args            = handler->tune_int_n ? (char*)"mode_n=integer" : NULL,
   };
-  uhd_tune_result_t tune_result;
-  rf_uhd_handler_t* handler = (rf_uhd_handler_t*)h;
+  uhd_tune_result_t tune_result = {};
   if (ch < handler->nof_tx_channels) {
     uhd_usrp_set_tx_freq(handler->usrp, &tune_request, ch, &tune_result);
   } else {
     for (int i = 0; i < handler->nof_tx_channels; i++) {
       uhd_usrp_set_tx_freq(handler->usrp, &tune_request, i, &tune_result);
+    }
+  }
+  if (offset || handler->tune_int_n) {
+    printf("[RF] TX tune %.0f Hz: LO %.3f Hz, DSP %.3f Hz (requested LO offset %.0f Hz%s)\n",
+           freq,
+           tune_result.actual_rf_freq,
+           tune_result.actual_dsp_freq,
+           handler->tx_lo_offset_hz,
+           handler->tune_int_n ? ", Integer-N" : "");
+    // the TX DC / LO leakage sits at the LO: it must land outside the NB band (+-90 kHz) and its few-kHz skirt
+    if (offset && fabs(tune_result.actual_rf_freq - freq) < 150e3) {
+      fprintf(stderr, "[RF] TX LO %.0f Hz is within 150 kHz of the carrier %.0f Hz: LO offset not applied\n",
+              tune_result.actual_rf_freq, freq);
+      exit(EXIT_FAILURE);
     }
   }
   return freq;
