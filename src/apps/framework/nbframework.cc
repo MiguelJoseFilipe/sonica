@@ -181,7 +181,7 @@ void NBFramework::parse_args(int argc, char *argv[])
   int opt;
   args_default();
 
-  while ((opt = getopt(argc, argv, "amgRBlHCdDsvrfqwzxcFSGUiO")) != -1) {
+  while ((opt = getopt(argc, argv, "amgRBlHCdDsvrfqwzxcFSGUiO:")) != -1) {
     switch (opt) {
       case 'a':
         args.rf_args = argv[optind];
@@ -230,7 +230,7 @@ void NBFramework::parse_args(int argc, char *argv[])
         args.use_prf_file = true;
         break;
       case 'O':
-        args.pre_cfo_hz = strtod(argv[optind], NULL);
+        args.pre_cfo_hz = strtod(optarg, NULL);   // O: consumes its value, so it may be negative
         break;
       default:
         // usage(args, argv[0]);
