@@ -415,6 +415,8 @@ void NBFramework::run()
   int      sfn_offset;
   uint32_t nframes = 0;
   float    rsrp = 0.0, rsrq = 0.0, noise = 0.0;
+  double   snr_rsrp = 0.0, snr_noise = 0.0;   // NRS RSRP / noise summed over every subframe after the MIB
+  uint32_t snr_n = 0;
 
 
   ue_sync.correct_cfo = !args.disable_cfo;
@@ -717,6 +719,10 @@ void NBFramework::run()
         }
       }
 
+      if (state != DECODE_MIB) {   // channel estimate of the last decoded subframe (SIB and NPDSCH states)
+        const float p = srslte_chest_dl_nbiot_get_rsrp(&ue_dl.chest), w = srslte_chest_dl_nbiot_get_noise_estimate(&ue_dl.chest);
+        if (isnormal(p) && isnormal(w)) { snr_rsrp += p; snr_noise += w; snr_n++; }
+      }
       if (!first_xmit || xmit_enable) {
         srslte_timestamp_t tstamp;
         srslte_ue_sync_nbiot_get_last_timestamp(&ue_sync, &tstamp);
@@ -743,6 +749,8 @@ void NBFramework::run()
 
     
   }
+  // mean NRS SNR from the MIB on, whatever stage the run reached (the status line prints only after SIB31)
+  if (snr_n) printf("\nSNR_NRS %.2f dB over %u subframes\n", 10 * log10(snr_rsrp / snr_noise), snr_n);
 
   if (args.use_prf_file) srslte_filesource_free(&fsrc); else srslte_rf_close(&rf);
   printf("\nBye\n");
