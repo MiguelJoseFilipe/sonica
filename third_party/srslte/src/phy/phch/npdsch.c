@@ -728,7 +728,10 @@ int srslte_npdsch_encode_seq(srslte_npdsch_t*        q,
            cfg->num_sf + 1,
            cfg->grant.nof_sf * cfg->grant.nof_rep);
       for (int i = 0; i < q->cell.nof_ports; i++) {
-        srslte_npdsch_put(q, &q->tx_syms[i][cfg->sf_idx * cfg->nbits.nof_re], sf_symbols[i], &cfg->grant);
+        // BCCH: sf_idx keeps counting across repetitions (0..nof_sf*nof_rep-1) but only nof_sf SFs are encoded;
+        // every repetition re-sends them (the UE soft-combines repetitions with the same scrambling)
+        srslte_npdsch_put(
+            q, &q->tx_syms[i][(cfg->sf_idx % cfg->grant.nof_sf) * cfg->nbits.nof_re], sf_symbols[i], &cfg->grant);
       }
       cfg->num_sf++;
 
