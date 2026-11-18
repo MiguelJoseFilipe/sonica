@@ -537,6 +537,12 @@ void NBFramework::run()
                                                            SRSLTE_SIRNTI);
             if (dec_ret == SRSLTE_SUCCESS) {
               printf("SIB1 received\n");
+              {  // alignment: file time (s) of the last subframe of this SIB1
+                srslte_timestamp_t ts;
+                srslte_ue_sync_nbiot_get_last_timestamp(&ue_sync, &ts);
+                printf("ALIGN SIB1 t_file %.6f s SFN %d sf %d\n", srslte_timestamp_real(&ts), system_frame_number,
+                       get_sfidx());
+              }
               srslte_sys_info_block_type_1_nb_t sib = {};
               srslte_npdsch_sib1_unpack(rx_tb, &sib);
               hyper_frame_number = sib.hyper_sfn;
@@ -579,6 +585,12 @@ void NBFramework::run()
                                                            SRSLTE_SIRNTI);
             if (dec_ret == SRSLTE_SUCCESS) {
               printf("SIB2 received\n");
+              {  // alignment: file time (s) of the last subframe of this SIB2
+                srslte_timestamp_t ts;
+                srslte_ue_sync_nbiot_get_last_timestamp(&ue_sync, &ts);
+                printf("ALIGN SIB2 t_file %.6f s SFN %d sf %d\n", srslte_timestamp_real(&ts), system_frame_number,
+                       get_sfidx());
+              }
               have_sib2 = true; // the SIB31-NB branch below activates its SI message once the grant is free
 
 #if HAVE_PCAP
