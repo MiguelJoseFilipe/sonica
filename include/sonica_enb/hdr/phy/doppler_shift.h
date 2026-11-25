@@ -40,6 +40,7 @@ extern std::vector<double> qef_amp_table;     // DL amplitude per row, empty = b
 extern double qef_t0;                         // experiment time of row 0 (s)
 extern double qef_dt;                         // row spacing (s)
 extern std::vector<double> qef_sat_table[6];  // satellite ECEF x, y, z (m), vx, vy, vz (m/s) per row
+extern std::vector<double> qef_range_table;   // satellite-device range (m) per row, for the propagation delay
 
 namespace sonica_enb {
     class doppler_shift
@@ -47,6 +48,7 @@ namespace sonica_enb {
       public:
       static double t_v(double x);
       static double get_doppler_effect(double Theta_max, double t);
+      static double get_delay(double Theta_max, double t);  // earth-moving one-way delay (s), as OAI ds_delay_at
       static std::tuple<int, double, float> get_parameters();
       static double get_experiment_time(double visbility_time, double start_time);
       static double get_fspl();

@@ -48,6 +48,7 @@ std::vector<double> qef_amp_table;
 double qef_t0 = 0.0;
 double qef_dt = 0.1;
 std::vector<double> qef_sat_table[6];
+std::vector<double> qef_range_table;
 
 
 
@@ -76,6 +77,11 @@ namespace sonica_enb {
         double a1 = cos(acos(R_e / R * cos(Theta_max * M_PI / 180.0)) - Theta_max * M_PI / 180.0);
         double delta_f = -f / c * (R_e * R * sin(Omega_s * t)) * a1 * Omega_s / sqrt(pow(R_e, 2) + pow(R, 2) - 2 * R_e * R * cos(Omega_s * t) * a1);
         return delta_f;
+    }
+
+    double doppler_shift::get_delay(double Theta_max, double t) {
+        double a1 = cos(acos(R_e / R * cos(Theta_max * M_PI / 180.0)) - Theta_max * M_PI / 180.0);
+        return sqrt(pow(R_e, 2) + pow(R, 2) - 2 * R_e * R * cos(Omega_s * t) * a1) / c;
     }
 
 
@@ -312,6 +318,7 @@ namespace sonica_enb {
         qef_amp_table.clear();
         for (int k = 0; k < 6; k++)
             qef_sat_table[k].assign(sat[k].begin() + first, sat[k].begin() + last + 1);
+        qef_range_table.assign(range.begin() + first, range.begin() + last + 1);
         const double ka = X3DB / sin(beam_half_hpbw(beam_km * 1000.0));
         const double k0 = pow(10.0, offset_db / 20.0);
         for (size_t i = first; i <= last; i++) {

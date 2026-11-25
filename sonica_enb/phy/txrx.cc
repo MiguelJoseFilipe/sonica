@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <chrono>
 #include <thread>
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <fstream>
@@ -58,7 +59,7 @@ double* pointer_FSPL;
 // Pass time: extrapolated from the last clock synchronization and looped over
 // [-vis/2, +vis/2). No Doppler before the first transmitted subframe.
 // Pass time of radio-clock time t_radio; false before the first transmitted subframe and in calibration
-static bool ntn_pass_time(double t_radio, double& pass_t)
+static bool ntn_pass_time(double t_radio, double& pass_t, bool in_calibration = false)
 {
   using namespace std::chrono;
   double ref_experiment_time, ref_wall_sec;
@@ -75,7 +76,7 @@ static bool ntn_pass_time(double t_radio, double& pass_t)
   } else {
     now_sec = duration_cast<duration<double>>(system_clock::now().time_since_epoch()).count();
   }
-  if (g_calibration.load() || !g_tx_started.load()) return false;
+  if ((g_calibration.load() && !in_calibration) || !g_tx_started.load()) return false;
   double real = now_sec - ref_wall_sec + ref_experiment_time;
   pass_t = g_pass_start_offset + std::fmod(real - g_pass_start_offset, g_vis_time);
   if (pass_t < g_pass_start_offset) pass_t += g_vis_time;
@@ -99,6 +100,26 @@ static void ntn_dl_at(const srslte_timestamp_t& tx_time, double& doppler, double
       doppler = sonica_enb::doppler_shift::get_precomputed_doppler(doppler_table, g_pass_start_offset, 0.1, pass_t);
     }
   }
+}
+
+// NTN propagation delay ("Delay mode" in config.txt, as the OAI gNB: 0 off, 1 relative to the smallest delay of
+// the window, 2 absolute), also in calibration mode. Added to the TX time of each subframe in WHOLE samples: srsLTE
+// radio::tx then trims (delay shrank) or zero-pads (delay grew) the first sample of the subframe, a cyclic-prefix
+// sample, keeping the stream contiguous (the X310 ignores timestamps inside a burst). Unquantised, the per-subframe
+// change (~0.04 sample) was rounded away by radio::tx at every call and the delay never moved (OTA test 2026-11-25).
+static int    g_delay_mode = 0;
+static double g_delay_ref  = 0.0;  // smallest one-way delay of the window (s)
+static int    g_max_elev   = 90;
+static double ntn_delay_at(const srslte_timestamp_t& tx_time)
+{
+  double pass_t;
+  if (g_delay_mode == 0 || !ntn_pass_time(tx_time.full_secs + tx_time.frac_secs, pass_t, true))
+    return 0.0;
+  double d = qef_model ? sonica_enb::doppler_shift::qef_at(qef_range_table, pass_t) / 299792458.0
+                       : sonica_enb::doppler_shift::get_delay(g_max_elev, pass_t);
+  if (g_delay_mode == 1)
+    d -= g_delay_ref;
+  return d > 0.0 ? d : 0.0;
 }
 
 // Last (DL TX tti, its on-air radio time), set by the main loop, read by RRC for SIB31-NB
@@ -427,6 +448,14 @@ void txrx::run_thread()
         std::string v = cline.substr(cline.find('=') + 1);
         v.erase(0, v.find_first_not_of(" \t"));
         try { calib_dopp = std::stod(v); } catch (...) {}
+      } else if (cline.find("Delay mode =") == 0) {
+        std::string v = cline.substr(cline.find('=') + 1);
+        v.erase(0, v.find_first_not_of(" \t"));
+        try { g_delay_mode = std::stoi(v); } catch (...) {}
+        if (g_delay_mode < 0 || g_delay_mode > 2) {
+          std::cerr << "[DOPPLER] invalid Delay mode " << g_delay_mode << ", disabling delay" << std::endl;
+          g_delay_mode = 0;
+        }
       }
     }
     g_calibration = calib;
@@ -453,6 +482,21 @@ void txrx::run_thread()
   qef_model = doppler_shift::load_qef(carrierFrequency);
   if (!qef_model)
     doppler_table = ds.doppler_shift::precompute_doppler(maxElevation, offset, visibility_time/2, 0.1);
+  g_max_elev = maxElevation;
+  if (g_delay_mode != 0) {
+    double dmin, dmax;
+    if (qef_model) {
+      const auto r = std::minmax_element(qef_range_table.begin(), qef_range_table.end());
+      dmin = *r.first / 299792458.0;
+      dmax = *r.second / 299792458.0;
+    } else {  // d(t) is symmetric about t = 0: smallest at max elevation, largest at the window ends
+      dmin = doppler_shift::get_delay(maxElevation, 0.0);
+      dmax = doppler_shift::get_delay(maxElevation, offset);
+    }
+    g_delay_ref = dmin;
+    std::cout << "[DOPPLER] Delay " << (g_delay_mode == 2 ? "absolute" : "relative") << ": " << dmin * 1e6 << " us at max elevation, "
+              << dmax * 1e6 << " us at the window ends, " << (dmax - dmin) * 1e6 << " us of variation" << std::endl;
+  }
 
 
   double ntn_phase = 0.0, ntn_t_prev = -1.0, ntn_f_prev = 0.0;  // NTN carrier phase state (main loop only)
@@ -502,7 +546,10 @@ void txrx::run_thread()
             tx_time.frac_secs,
             worker->get_id());
 
-      worker->set_time(tx_hfn, tti, tx_worker_cnt, tx_time);
+      // On-air time of this subframe: the TX time plus the NTN propagation delay
+      srslte_timestamp_t tx_air = tx_time;
+      srslte_timestamp_add(&tx_air, 0, (double)llround(ntn_delay_at(tx_time) * samp_rate) / samp_rate);
+      worker->set_time(tx_hfn, tti, tx_worker_cnt, tx_air);
       {
         std::lock_guard<std::mutex> lock(ntn_tx_snap_mutex);
         ntn_tx_snap_tti = TTI_ADD(tti, FDD_HARQ_DELAY_UL_MS);  // as sf_worker tti_tx_dl, paired with tx_time
@@ -513,7 +560,7 @@ void txrx::run_thread()
       {
         double doppler, amp;
         ntn_dl_at(tx_time, doppler, amp);
-        const double t = tx_time.full_secs + tx_time.frac_secs;
+        const double t = tx_air.full_secs + tx_air.frac_secs;  // on-air time: a trimmed or padded sample keeps its phase
         if (ntn_t_prev >= 0.0)
           ntn_phase = std::fmod(ntn_phase + 2.0 * M_PI * ntn_f_prev * (t - ntn_t_prev), 2.0 * M_PI);
         ntn_t_prev = t;
